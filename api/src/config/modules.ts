@@ -21,7 +21,7 @@ export const MODULE_CATALOG: ModuleDef[] = [
   ...crud('users', 'users'),
   // Settings area — nested sub-pages
   ...crud('settings.device', 'device settings'),
-  ...crud('settings.stations', 'stations'),
+  ...crud('settings.branches', 'branches'),
   ...crud('settings.groups', 'module groups'),
   ...crud('settings.modules', 'module catalog entries'),
 ];
@@ -48,11 +48,11 @@ export const DEFAULT_GROUPS: Record<string, string[]> = {
     'settings.device.create',
     'settings.device.edit',
     'settings.device.delete',
-    // Stations
-    'settings.stations.view',
-    'settings.stations.create',
-    'settings.stations.edit',
-    'settings.stations.delete',
+    // Branches
+    'settings.branches.view',
+    'settings.branches.create',
+    'settings.branches.edit',
+    'settings.branches.delete',
   ],
   owner_defaults: ALL_MODULE_NAMES,
 };

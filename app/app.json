@@ -1,16 +1,19 @@
 {
   "expo": {
-    "name": "Water Refilling",
-    "slug": "water-refilling-app",
-    "scheme": "waterrefilling",
+    "name": "cleanAndGo",
+    "slug": "clean-and-go",
+    "scheme": "cleanAndGo",
     "version": "1.0.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "autoHideHomeIndicator": true,
+      "bundleIdentifier": "com.cleanAndGo.app"
     },
     "android": {
+      "package": "com.cleanAndGo.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -26,6 +29,17 @@
       "expo-secure-store",
       "expo-router",
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "d2ee02c5-1d43-437d-a98a-98a94d8c7469"
+      }
+    },
+    "owner": "grannybells"
   }
 }

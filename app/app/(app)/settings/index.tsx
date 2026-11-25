@@ -8,7 +8,7 @@ export default function SettingsIndex() {
   if (status === "unauthenticated") return <Redirect href="/(auth)/login" />;
 
   if (hasModule("settings.device.view")) return <Redirect href="/settings/device" />;
-  if (hasModule("settings.stations.view")) return <Redirect href="/settings/stations" />;
+  if (hasModule("settings.branches.view")) return <Redirect href="/settings/branches" />;
   if (hasModule("settings.groups.view")) return <Redirect href="/settings/groups" />;
   if (hasModule("settings.modules.view")) return <Redirect href="/settings/modules" />;
   return <Redirect href="/" />;

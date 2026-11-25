@@ -1,9 +1,9 @@
-export interface Station {
-  station_id: string;
-  station_name: string;
-  station_address: string | null;
-  station_lat: string | null;
-  station_lng: string | null;
+export interface Branch {
+  branch_id: string;
+  branch_name: string;
+  branch_address: string | null;
+  branch_lat: string | null;
+  branch_lng: string | null;
   contact_number: string | null;
   description: string | null;
   is_active: number | boolean;

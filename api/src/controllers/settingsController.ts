@@ -14,8 +14,8 @@ const parseId = (raw: string): number | null => {
 };
 
 const STRING_FIELDS = [
-  'station_id',
-  'station_name',
+  'branch_id',
+  'branch_name',
   'user_name',
   'device_id',
   'device_name',

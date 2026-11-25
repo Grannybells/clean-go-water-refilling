@@ -21,7 +21,11 @@ interface AuthContextValue {
   user: User | null;
   modules: string[];
   hasModule: (name: string) => boolean;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (
+    email: string,
+    password: string,
+    branchId?: string | null,
+  ) => Promise<void>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -79,19 +83,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void hydrate();
   }, [hydrate]);
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const data = await api.post<LoginResponse>(
-      '/api/auth/login',
-      { email, password },
-      { auth: false },
-    );
-    await secureStorage.setItem(STORAGE_KEYS.authToken, data.token);
-    await storage.set(STORAGE_KEYS.authUser, data.user);
-    await storage.set(STORAGE_KEYS.authModules, data.modules);
-    setUser(data.user);
-    setModules(data.modules ?? []);
-    setStatus('authenticated');
-  }, []);
+  const signIn = useCallback(
+    async (email: string, password: string, branchId?: string | null) => {
+      const body: {
+        email: string;
+        password: string;
+        branch_id?: string;
+      } = { email, password };
+      if (branchId) body.branch_id = branchId;
+
+      const data = await api.post<LoginResponse>(
+        '/api/auth/login',
+        body,
+        { auth: false },
+      );
+      await secureStorage.setItem(STORAGE_KEYS.authToken, data.token);
+      await storage.set(STORAGE_KEYS.authUser, data.user);
+      await storage.set(STORAGE_KEYS.authModules, data.modules);
+      setUser(data.user);
+      setModules(data.modules ?? []);
+      setStatus('authenticated');
+    },
+    [],
+  );
 
   const signOut = useCallback(async () => {
     await clearSession();

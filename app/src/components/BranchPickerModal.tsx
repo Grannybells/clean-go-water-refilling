@@ -9,20 +9,20 @@ import {
   View,
 } from "react-native";
 
-import type { Station } from "@/types/station";
+import type { Branch } from "@/types/branch";
 
 type Props = {
   visible: boolean;
-  stations: Station[];
+  branches: Branch[];
   selectedId: string | null;
   onClose: () => void;
-  onSelect: (station: Station) => void;
+  onSelect: (branch: Branch) => void;
   onClear?: () => void;
 };
 
-export default function StationPickerModal({
+export default function BranchPickerModal({
   visible,
-  stations,
+  branches,
   selectedId,
   onClose,
   onSelect,
@@ -32,13 +32,13 @@ export default function StationPickerModal({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return stations;
-    return stations.filter(
-      (s) =>
-        s.station_id.toLowerCase().includes(q) ||
-        s.station_name.toLowerCase().includes(q),
+    if (!q) return branches;
+    return branches.filter(
+      (b) =>
+        b.branch_id.toLowerCase().includes(q) ||
+        b.branch_name.toLowerCase().includes(q),
     );
-  }, [query, stations]);
+  }, [query, branches]);
 
   return (
     <Modal
@@ -51,7 +51,7 @@ export default function StationPickerModal({
         <View className="mt-auto max-h-[80%] rounded-t-3xl bg-white">
           <View className="flex-row items-center justify-between border-b border-slate-100 px-5 py-4">
             <Text className="text-lg font-bold text-slate-900">
-              Choose station
+              Choose branch
             </Text>
             <Pressable
               onPress={onClose}
@@ -82,21 +82,21 @@ export default function StationPickerModal({
 
           <FlatList
             data={filtered}
-            keyExtractor={(s) => s.station_id}
+            keyExtractor={(b) => b.branch_id}
             contentContainerStyle={{ padding: 16, paddingBottom: 24 }}
             ItemSeparatorComponent={() => <View className="h-2" />}
             ListEmptyComponent={
               <View className="items-center py-10">
                 <Ionicons name="business-outline" size={32} color="#94a3b8" />
                 <Text className="mt-2 text-sm text-slate-500">
-                  {stations.length === 0
-                    ? "No stations available."
+                  {branches.length === 0
+                    ? "No branches available."
                     : "No matches."}
                 </Text>
               </View>
             }
             renderItem={({ item }) => {
-              const selected = item.station_id === selectedId;
+              const selected = item.branch_id === selectedId;
               return (
                 <Pressable
                   onPress={() => {
@@ -112,12 +112,12 @@ export default function StationPickerModal({
                   <View className="flex-row items-center justify-between">
                     <View className="flex-1 pr-3">
                       <Text className="text-base font-semibold text-slate-900">
-                        {item.station_name}
+                        {item.branch_name}
                       </Text>
                       <Text className="text-xs text-slate-500">
-                        ID: {item.station_id}
-                        {item.station_address
-                          ? ` · ${item.station_address}`
+                        ID: {item.branch_id}
+                        {item.branch_address
+                          ? ` · ${item.branch_address}`
                           : ""}
                       </Text>
                     </View>
@@ -144,7 +144,7 @@ export default function StationPickerModal({
                 className="rounded-xl border border-slate-200 bg-white px-4 py-3 active:bg-slate-50"
               >
                 <Text className="text-center text-sm font-semibold text-slate-700">
-                  Clear station
+                  Clear branch
                 </Text>
               </Pressable>
             </View>

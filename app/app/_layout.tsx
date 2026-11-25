@@ -1,8 +1,9 @@
 import '../global.css';
 
+import { NavigationBar } from 'expo-navigation-bar';
 import { Slot, SplashScreen, useRouter, useSegments } from 'expo-router';
-import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from '@/context/AuthContext';
@@ -36,7 +37,8 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <AuthProvider>
         <RouteGate />
-        <StatusBar style="dark" />
+        <StatusBar hidden />
+        <NavigationBar hidden />
       </AuthProvider>
     </SafeAreaProvider>
   );

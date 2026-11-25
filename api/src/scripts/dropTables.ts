@@ -3,7 +3,7 @@ import { pool } from '../config/database';
 const TABLES = [
   'settings',
   'contracts',
-  'stations',
+  'branches',
   'users_modules_grp',
   'module_groups',
   'user_modules',
@@ -15,12 +15,10 @@ const TABLES = [
 
 const run = async (): Promise<void> => {
   console.log('Dropping all tables...');
-  await pool.query('SET FOREIGN_KEY_CHECKS = 0');
   for (const t of TABLES) {
-    await pool.query(`DROP TABLE IF EXISTS \`${t}\``);
+    await pool.query(`IF OBJECT_ID(N'dbo.${t}', N'U') IS NOT NULL DROP TABLE dbo.${t};`);
     console.log(`  dropped: ${t}`);
   }
-  await pool.query('SET FOREIGN_KEY_CHECKS = 1');
   console.log('Done.');
   await pool.end();
 };

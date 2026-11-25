@@ -1,7 +1,7 @@
 {
   "name": "api",
   "version": "1.0.0",
-  "description": "Express TypeScript MySQL API with JWT, CORS, Helmet, and rate limiting",
+  "description": "Express TypeScript MSSQL API with JWT, CORS, Helmet, and rate limiting",
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
@@ -9,11 +9,12 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "db:init": "ts-node src/scripts/initDatabase.ts",
     "db:drop": "ts-node -r dotenv/config src/scripts/dropTables.ts",
-    "db:reset": "npm run db:drop && npm run db:init && npm run seed:modules && npm run seed:users && npm run seed:stations",
+    "db:reset": "npm run db:drop && npm run db:init && npm run seed:modules && npm run seed:users && npm run seed:branches",
     "seed:owner": "ts-node -r dotenv/config src/scripts/seedOwner.ts",
     "seed:users": "ts-node -r dotenv/config src/scripts/seedUsers.ts",
-    "seed:stations": "ts-node -r dotenv/config src/scripts/seedStations.ts",
-    "seed:modules": "ts-node -r dotenv/config src/scripts/seedModules.ts"
+    "seed:branches": "ts-node -r dotenv/config src/scripts/seedBranches.ts",
+    "seed:modules": "ts-node -r dotenv/config src/scripts/seedModules.ts",
+    "seed:customers": "ts-node -r dotenv/config src/scripts/seedCustomers.ts"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -23,13 +24,14 @@
     "express-rate-limit": "^7.4.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
-    "mysql2": "^3.11.0"
+    "mssql": "^11.0.1"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.6",
+    "@types/mssql": "^9.1.5",
     "@types/node": "^20.14.10",
     "ts-node": "^10.9.2",
     "ts-node-dev": "^2.0.0",

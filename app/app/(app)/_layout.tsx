@@ -1,6 +1,7 @@
 import { Drawer } from "expo-router/drawer";
 
 import DrawerContent from "@/components/DrawerContent";
+import HeaderClock from "@/components/HeaderClock";
 
 export default function AppLayout() {
   return (
@@ -13,11 +14,15 @@ export default function AppLayout() {
         headerTintColor: "#0f172a",
         headerStyle: { backgroundColor: "#eef7ff" },
         headerTitleStyle: { fontWeight: "600" },
+        headerRight: () => <HeaderClock />,
         drawerType: "front",
         drawerStyle: { width: 280, backgroundColor: "#ffffff" },
       }}
     >
       <Drawer.Screen name="index" options={{ title: "Home" }} />
+      <Drawer.Screen name="pos" options={{ title: "POS" }} />
+      <Drawer.Screen name="pickup" options={{ title: "Pickups" }} />
+      <Drawer.Screen name="delivery" options={{ title: "Deliveries" }} />
       <Drawer.Screen name="customer" options={{ title: "Customers" }} />
       <Drawer.Screen name="sales" options={{ title: "Sales" }} />
       <Drawer.Screen name="transactions" options={{ title: "Transactions" }} />

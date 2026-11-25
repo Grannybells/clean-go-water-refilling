@@ -1,7 +1,7 @@
 export interface Settings {
   id: number;
-  station_id: string | null;
-  station_name: string | null;
+  branch_id: string | null;
+  branch_name: string | null;
   user_id: number | null;
   user_name: string | null;
   device_id: string | null;

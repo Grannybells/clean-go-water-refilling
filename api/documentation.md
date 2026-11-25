@@ -3,7 +3,9 @@
 Living reference for every route exposed by the API. Append new sections here as routes are added.
 
 ## Base URL
-`http://localhost:3000`
+`http://localhost:3000/cleanAndGo`
+
+Every path in this document is **relative to the base URL**. For example, `POST /api/auth/login` means `POST http://localhost:3000/cleanAndGo/api/auth/login`.
 
 All requests/responses are JSON. Protected routes require header: `Authorization: Bearer <token>`.
 
@@ -22,14 +24,14 @@ cd api
 npm install
 ```
 
-Make sure `.env` has valid MySQL credentials and your chosen owner credentials:
+Make sure `.env` has valid Microsoft SQL Server credentials and your chosen owner credentials:
 
 ```
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_USER=root
-DB_PASSWORD=Test123123
-DB_NAME=water-refilling
+DB_SERVER=CF-SQL\CFSQLSERVER     # host\instance (named instance) or just host (default instance)
+DB_DATABASE=water-refilling
+DB_USER=sa
+DB_PASSWORD=Cleanfuel1
+# DB_PORT=1433                    # optional, only if connecting by port instead of instance name
 
 JWT_SECRET=<replace-with-a-long-random-string>
 
@@ -39,19 +41,21 @@ SEED_OWNER_FIRST_NAME=Owner
 SEED_OWNER_LAST_NAME=Account
 ```
 
+> **SQL Server prerequisites:** Mixed Mode authentication enabled, the `sa` login enabled with the password above, TCP/IP protocol enabled on the instance, and the **SQL Server Browser** service running (required to resolve named instances like `\CFSQLSERVER`). Restart the SQL Server service after changing authentication mode.
+
 ### 2. Create the database and tables
 
-Make sure MySQL is running, then:
+Make sure the SQL Server instance is running, then:
 
 ```bash
 npm run db:init
 ```
 
-This creates the `water-refilling` database (if missing), every table, and seeds the four default roles. Safe to re-run — it uses `CREATE TABLE IF NOT EXISTS` and `INSERT IGNORE`.
+This connects to the `master` database to issue `IF DB_ID(...) IS NULL CREATE DATABASE`, then provisions every table (using `IF OBJECT_ID(...) IS NULL CREATE TABLE`), installs per-table `updated_at` triggers, and seeds the four default roles. Safe to re-run — each step is idempotent.
 
 > The server also auto-ensures the schema on every `npm run dev` / `npm start`, so you can skip this step if you don't mind the first boot being slightly slower.
 
-### 3. Seed everything (modules, users, stations)
+### 3. Seed everything (modules, users, branches)
 
 The fastest path to a usable DB:
 
@@ -59,7 +63,7 @@ The fastest path to a usable DB:
 npm run db:reset
 ```
 
-Chains `db:drop → db:init → seed:modules → seed:users → seed:stations`. Destructive — drops every table and rebuilds from scratch. Use this when you want a known-good blank state.
+Chains `db:drop → db:init → seed:modules → seed:users → seed:branches`. Destructive — drops every table and rebuilds from scratch. Use this when you want a known-good blank state.
 
 For a non-destructive seed (e.g. first-time setup on a fresh empty DB), run the individual seeds instead:
 
@@ -67,7 +71,7 @@ For a non-destructive seed (e.g. first-time setup on a fresh empty DB), run the 
 npm run db:init           # create database + tables (idempotent)
 npm run seed:modules      # module catalog + default role groups
 npm run seed:users        # creates 8 sample users (see roster below)
-npm run seed:stations     # 4 sample stations
+npm run seed:branches     # 4 sample branches
 ```
 
 Each seed is idempotent — re-running them skips rows that already exist. `seed:modules` is slightly different: it **upserts** the catalog, **clears and rewrites** the four default groups, and **backfills** existing users into their role's group.
@@ -95,29 +99,31 @@ npm run dev
 
 You should see:
 ```
-Connected to MySQL at 127.0.0.1:3306/water-refilling
-Schema check: table `users` ready.
+Connected to MSSQL at CF-SQL\CFSQLSERVER/water-refilling
+Schema check: table 'users' ready.
 ...
-API server running on http://localhost:3000
+API server running on http://localhost:3000/cleanAndGo
 ```
 
 Sanity check from another terminal:
 ```bash
-curl http://localhost:3000/health
+curl http://localhost:3000/cleanAndGo/health
 # { "status": "ok", "timestamp": "..." }
 ```
 
 ### 5. Log in as the owner
 
 ```powershell
-$login = Invoke-RestMethod -Uri http://localhost:3000/api/auth/login `
+$login = Invoke-RestMethod -Uri http://localhost:3000/cleanAndGo/api/auth/login `
   -Method Post -ContentType 'application/json' `
   -Body '{"email":"owner@example.com","password":"changeme123"}'
 
 $token = $login.token
 ```
 
-The response contains `{ user, token }`. **Save the `token`** — every protected request uses it as `Authorization: Bearer <token>`.
+The response contains `{ user, modules, contract, token }`. **Save the `token`** — every protected request uses it as `Authorization: Bearer <token>`.
+
+> Owner/admin can log in without a `branch_id` and `contract` will be `null`. Operator/staff **must** send `branch_id` in the body and have an active contract for that branch (see `POST /api/auth/login` below).
 
 ### 6. Create another user (the admin-driven "register")
 
@@ -132,7 +138,7 @@ $body = @{
   role       = 'staff'
 } | ConvertTo-Json
 
-Invoke-RestMethod -Uri http://localhost:3000/api/users `
+Invoke-RestMethod -Uri http://localhost:3000/cleanAndGo/api/users `
   -Method Post -ContentType 'application/json' `
   -Headers @{ Authorization = "Bearer $token" } `
   -Body $body
@@ -148,19 +154,19 @@ Optional extras in the body: `phone`, `address`, `birth_date` (`YYYY-MM-DD`), `g
 
 ### 7. The new user logs in
 
-Juan can now log in with the password the owner set:
+Juan can now log in with the password the owner set — but only after the owner creates a contract assigning him to a branch (see `POST /api/contracts`). Login will fail with **403** until that assignment exists.
 
 ```json
 POST /api/auth/login
-{ "email": "juan@example.com", "password": "juan-temp-123" }
+{ "email": "juan@example.com", "password": "juan-temp-123", "branch_id": "ALPHA" }
 ```
 
-He gets his own token, scoped to `role: "staff"`.
+He gets his own token, scoped to `role: "staff"`, with his contract embedded in the JWT.
 
 ### 8. Call an authenticated endpoint
 
 ```powershell
-Invoke-RestMethod -Uri http://localhost:3000/api/users/me `
+Invoke-RestMethod -Uri http://localhost:3000/cleanAndGo/api/users/me `
   -Headers @{ Authorization = "Bearer $juansToken" }
 ```
 
@@ -168,12 +174,16 @@ Invoke-RestMethod -Uri http://localhost:3000/api/users/me `
 
 | Symptom | Likely cause |
 |---|---|
-| `ECONNREFUSED` on boot | MySQL not running, or wrong `DB_*` in `.env` |
+| `ConnectionError: Failed to connect to ...` on boot | SQL Server instance not running, TCP/IP disabled, or SQL Server Browser not running (needed for named instances) |
+| `ConnectionError: Login failed for user 'sa'` | `sa` disabled, wrong password, or Mixed Mode auth not enabled (restart service after enabling) |
 | `Set SEED_OWNER_EMAIL and SEED_OWNER_PASSWORD...` | Those env vars are empty in `.env` |
 | `An owner already exists` from seed | Expected — seed is idempotent |
 | `401 Missing or invalid Authorization header` | Forgot the `Authorization: Bearer <token>` header |
 | `401 Invalid or expired token` | Token expired (default 1 day). Log in again. |
 | `403 Forbidden: insufficient role` | Caller isn't `owner`/`admin` for that endpoint |
+| `403 No active branch assignment...` | Operator/staff has no current contract. Owner must create one via `POST /api/contracts` first. |
+| `403 You are not assigned to branch 'X'.` | The `branch_id` sent at login doesn't match the user's active contract. |
+| `400 branch_id is required` | Operator/staff login missing the `branch_id` body field. |
 | `409 Email already registered` | That email already exists in `users` |
 | `429 Too many requests` | Hit the rate limit — wait 15 min or restart server |
 
@@ -188,9 +198,16 @@ Public. Rate-limited (10 / 15min per IP).
 ```json
 {
   "email": "juan@example.com",
-  "password": "secret123"
+  "password": "secret123",
+  "branch_id": "ALPHA"
 }
 ```
+
+| Field | Required? | Notes |
+|---|---|---|
+| `email`      | always | — |
+| `password`   | always | — |
+| `branch_id` | **required for operator/staff**, ignored for owner/admin | Must match the user's currently-active contract (today falls within `start_date`/`end_date`). |
 
 **200**
 ```json
@@ -210,13 +227,28 @@ Public. Rate-limited (10 / 15min per IP).
     "updated_at": "2026-11-04T08:30:00.000Z"
   },
   "modules": ["home.view", "customer.view", "inventory.view"],
+  "contract": {
+    "id": 12,
+    "branch_id": "ALPHA",
+    "branch_name": "Alpha Refilling Branch",
+    "start_date": "2026-11-04",
+    "end_date": "2027-11-04"
+  },
   "token": "eyJhbGciOi..."
 }
 ```
 
-`modules` is the user's effective permission set (see **Permissions model** below). It's already encoded inside the JWT; it's also returned here so the client doesn't have to decode the token.
+- `modules` — the user's effective permission set (see **Permissions model** below).
+- `contract` — the active assignment for operator/staff; `null` for owner/admin. The same object is embedded inside the JWT so any request handler can read `req.user.contract` without a DB round-trip.
 
-**Errors:** `400` missing field · `401` invalid credentials · `429` rate-limited
+**Behavior by role:**
+
+| Role | `branch_id` missing | `branch_id` provided, no active contract | `branch_id` provided, mismatched | `branch_id` matches active contract |
+|---|---|---|---|---|
+| owner / admin  | 200 (`contract: null`) | 200 (`contract: null`) | 200 (`contract: null`) | 200 (`contract: null`) |
+| operator / staff | **400** `branch_id is required` | **403** `No active branch assignment...` | **403** `You are not assigned to branch 'X'.` | **200** with contract embedded |
+
+**Errors:** `400` missing field / `branch_id` wrong type · `401` invalid credentials · `403` operator/staff without matching active contract · `429` rate-limited
 
 ---
 
@@ -496,7 +528,7 @@ Remove a user from a group. Does not affect their direct module grants.
 
 The module catalog is **code-managed** — rows are created and removed via `MODULE_CATALOG` in `src/config/modules.ts` + `npm run seed:modules`. Only the human-readable `description` can be edited at runtime, so UI copy can be tweaked without a code change.
 
-**Why not full CRUD?** Module names (`customer.view`, `settings.stations.edit`, etc.) are hardcoded in the Expo client and the API route gates. Inventing or deleting modules at runtime would create orphan tokens that don't correspond to any actual check — so the catalog is treated as immutable structure, with description-only edits for UX purposes.
+**Why not full CRUD?** Module names (`customer.view`, `settings.branches.edit`, etc.) are hardcoded in the Expo client and the API route gates. Inventing or deleting modules at runtime would create orphan tokens that don't correspond to any actual check — so the catalog is treated as immutable structure, with description-only edits for UX purposes.
 
 The tokens `settings.modules.create` and `settings.modules.delete` exist in the catalog for UI symmetry but have **no endpoints** — grant them if you want, they just don't do anything.
 
@@ -687,50 +719,50 @@ Delete a (non-reserved) group entirely. **Cascades**: also removes all `users_mo
 
 ---
 
-## Settings → Stations
+## Settings → Branches
 
-All station routes are **module-gated**, not role-gated. Each verb requires its matching `settings.stations.*` token:
+All branch routes are **module-gated**, not role-gated. Each verb requires its matching `settings.branches.*` token:
 
 | Method | Required module          |
 |--------|--------------------------|
-| GET    | `settings.stations.view` |
-| POST   | `settings.stations.create` |
-| PATCH  | `settings.stations.edit` |
-| DELETE | `settings.stations.delete` |
+| GET    | `settings.branches.view` |
+| POST   | `settings.branches.create` |
+| PATCH  | `settings.branches.edit` |
+| DELETE | `settings.branches.delete` |
 
-Admin has `settings.stations.*` in `admin_defaults`. Owner gets everything via `*`. Grant tokens individually (e.g. `settings.stations.view` alone) for read-only access.
+Admin has `settings.branches.*` in `admin_defaults`. Owner gets everything via `*`. Grant tokens individually (e.g. `settings.branches.view` alone) for read-only access.
 
-`station_id` is client-supplied (letters/digits/underscore/hyphen, max 20 chars) — e.g. `"ALPHA"`, `"STN-01"`. It must be unique across stations.
+`branch_id` is client-supplied (letters/digits/underscore/hyphen, max 20 chars) — e.g. `"ALPHA"`, `"STN-01"`. It must be unique across branches.
 
-### `POST /api/stations`
-Create a new station.
+### `POST /api/branches`
+Create a new branch.
 
 **Body**
 ```json
 {
-  "station_id": "ALPHA",
-  "station_name": "Alpha Refilling Station",
-  "station_address": "123 Rizal St, Manila",
-  "station_lat": 14.5995124,
-  "station_lng": 120.9842195,
+  "branch_id": "ALPHA",
+  "branch_name": "Alpha Refilling Branch",
+  "branch_address": "123 Rizal St, Manila",
+  "branch_lat": 14.5995124,
+  "branch_lng": 120.9842195,
   "contact_number": "+63 912 345 6789",
   "description": "Main branch",
   "is_active": true
 }
 ```
 
-Required: `station_id`, `station_name`, `station_address`.
-Optional: `station_lat`, `station_lng` (decimals), `contact_number`, `description`, `is_active` (defaults to `true`).
+Required: `branch_id`, `branch_name`, `branch_address`.
+Optional: `branch_lat`, `branch_lng` (decimals), `contact_number`, `description`, `is_active` (defaults to `true`).
 
 **201**
 ```json
 {
-  "station": {
-    "station_id": "ALPHA",
-    "station_name": "Alpha Refilling Station",
-    "station_address": "123 Rizal St, Manila",
-    "station_lat": "14.5995124",
-    "station_lng": "120.9842195",
+  "branch": {
+    "branch_id": "ALPHA",
+    "branch_name": "Alpha Refilling Branch",
+    "branch_address": "123 Rizal St, Manila",
+    "branch_lat": "14.5995124",
+    "branch_lng": "120.9842195",
     "contact_number": "+63 912 345 6789",
     "description": "Main branch",
     "is_active": 1,
@@ -741,45 +773,45 @@ Optional: `station_lat`, `station_lng` (decimals), `contact_number`, `descriptio
 }
 ```
 
-**Errors:** `400` missing field / invalid `station_id` format · `401` · `403` · `409` station_id already exists
+**Errors:** `400` missing field / invalid `branch_id` format · `401` · `403` · `409` branch_id already exists
 
 ---
 
-### `GET /api/stations`
-List all stations, newest first.
+### `GET /api/branches`
+List all branches, newest first.
 
 **200**
 ```json
-{ "stations": [ { "station_id": "ALPHA", "...": "..." }, { "station_id": "BRAVO", "...": "..." } ] }
+{ "branches": [ { "branch_id": "ALPHA", "...": "..." }, { "branch_id": "BRAVO", "...": "..." } ] }
 ```
 
 ---
 
-### `GET /api/stations/:id`
-Returns a single station by `station_id`.
+### `GET /api/branches/:id`
+Returns a single branch by `branch_id`.
 
-**200** → `{ "station": {...} }` · **404** if not found.
+**200** → `{ "branch": {...} }` · **404** if not found.
 
 ---
 
-### `PATCH /api/stations/:id`
-Partial update. Only fields present in the body are changed. `station_id` cannot be renamed.
+### `PATCH /api/branches/:id`
+Partial update. Only fields present in the body are changed. `branch_id` cannot be renamed.
 
 **Body (any subset)**
 ```json
 {
-  "station_name": "Alpha (renovated)",
-  "station_address": "456 Mabini St",
+  "branch_name": "Alpha (renovated)",
+  "branch_address": "456 Mabini St",
   "is_active": false
 }
 ```
 
-**200** → `{ "station": {...} }` (updated row) · **400** if body contains no updatable fields · **404** if not found.
+**200** → `{ "branch": {...} }` (updated row) · **400** if body contains no updatable fields · **404** if not found.
 
 ---
 
-### `DELETE /api/stations/:id`
-Hard delete. Returns **204** on success. Any `contracts` rows referencing this `station_id` become orphans (no FK) — delete those first if you care.
+### `DELETE /api/branches/:id`
+Hard delete. Returns **204** on success. Any `contracts` rows referencing this `branch_id` become orphans (no FK) — delete those first if you care.
 
 **Errors:** `401` · `403` · `404`
 
@@ -787,22 +819,24 @@ Hard delete. Returns **204** on success. Any `contracts` rows referencing this `
 
 ## Contracts
 
-Assigns a user to a station for a given period. All contract routes require auth **and** role `owner` or `admin`. Dates are `YYYY-MM-DD`.
+Assigns a user to a branch for a given period. All contract routes require auth **and** role `owner` or `admin`. Dates are `YYYY-MM-DD`.
+
+> **Contracts gate login for operator/staff.** `POST /api/auth/login` rejects an operator/staff user whose active contract doesn't match the `branch_id` they sent. Create the contract here *before* the user attempts to log in. A contract is "active" when today's date is between `start_date` and `end_date` (inclusive); `end_date = null` means open-ended.
 
 ### `POST /api/contracts`
-Create a contract. The server validates that `user_id` and `station_id` actually exist.
+Create a contract. The server validates that `user_id` and `branch_id` actually exist.
 
 **Body**
 ```json
 {
   "user_id": 7,
-  "station_id": "ALPHA",
+  "branch_id": "ALPHA",
   "start_date": "2026-11-04",
   "end_date": "2027-11-04"
 }
 ```
 
-Required: `user_id`, `station_id`, `start_date`.
+Required: `user_id`, `branch_id`, `start_date`.
 Optional: `end_date` (null = open-ended / still active).
 
 **201**
@@ -811,7 +845,7 @@ Optional: `end_date` (null = open-ended / still active).
   "contract": {
     "id": 12,
     "user_id": 7,
-    "station_id": "ALPHA",
+    "branch_id": "ALPHA",
     "start_date": "2026-11-04",
     "end_date": "2027-11-04",
     "created_by": 1,
@@ -820,21 +854,21 @@ Optional: `end_date` (null = open-ended / still active).
     "user_first_name": "Juan",
     "user_last_name": "Dela Cruz",
     "user_email": "juan@example.com",
-    "station_name": "Alpha Refilling Station"
+    "branch_name": "Alpha Refilling Branch"
   }
 }
 ```
 
-**Errors:** `400` missing/invalid field, bad date format, `end_date < start_date` · `401` · `403` · `404` user or station not found
+**Errors:** `400` missing/invalid field, bad date format, `end_date < start_date` · `401` · `403` · `404` user or branch not found
 
 ---
 
 ### `GET /api/contracts`
-List all contracts, newest first. Response joins user + station info.
+List all contracts, newest first. Response joins user + branch info.
 
 **Optional query filters:**
 - `?user_id=7` — only contracts for user 7
-- `?station_id=ALPHA` — only contracts for station ALPHA
+- `?branch_id=ALPHA` — only contracts for branch ALPHA
 - Combine both to narrow further.
 
 **200**
@@ -842,10 +876,10 @@ List all contracts, newest first. Response joins user + station info.
 {
   "contracts": [
     {
-      "id": 12, "user_id": 7, "station_id": "ALPHA",
+      "id": 12, "user_id": 7, "branch_id": "ALPHA",
       "start_date": "2026-11-04", "end_date": "2027-11-04",
       "user_first_name": "Juan", "user_last_name": "Dela Cruz",
-      "user_email": "juan@example.com", "station_name": "Alpha Refilling Station",
+      "user_email": "juan@example.com", "branch_name": "Alpha Refilling Branch",
       "created_by": 1, "created_at": "...", "updated_at": "..."
     }
   ]
@@ -860,14 +894,14 @@ Single contract (same joined shape). **404** if not found.
 ---
 
 ### `PATCH /api/contracts/:id`
-Partial update. Any subset of `user_id`, `station_id`, `start_date`, `end_date`. Server re-validates existence and date order.
+Partial update. Any subset of `user_id`, `branch_id`, `start_date`, `end_date`. Server re-validates existence and date order.
 
 **Body example**
 ```json
 { "end_date": "2026-12-31" }
 ```
 
-**200** → `{ "contract": {...} }` · **400** on validation failure · **404** if contract or referenced user/station not found.
+**200** → `{ "contract": {...} }` · **400** on validation failure · **404** if contract or referenced user/branch not found.
 
 ---
 
@@ -883,11 +917,11 @@ Settings is a **container page** with four sub-features, each with its own URL a
 | Sub-feature | URL root                   | Token namespace          | Admin default?        |
 |-------------|----------------------------|--------------------------|-----------------------|
 | Device      | `/api/settings/device`     | `settings.device.*`      | ✅ yes                |
-| Stations    | `/api/stations`            | `settings.stations.*`    | ✅ yes                |
+| Branches    | `/api/branches`            | `settings.branches.*`    | ✅ yes                |
 | Groups      | `/api/module-groups`       | `settings.groups.*`      | ❌ owner-only         |
 | Modules     | `/api/modules`             | `settings.modules.view`  | ❌ owner-only         |
 
-Each sub-section below documents its routes. Owner gets all via the `*` role bypass. Admin gets Device + Stations out of the box; Groups and Modules are owner-only unless an owner explicitly grants an individual user `settings.groups.*` or `settings.modules.view`.
+Each sub-section below documents its routes. Owner gets all via the `*` role bypass. Admin gets Device + Branches out of the box; Groups and Modules are owner-only unless an owner explicitly grants an individual user `settings.groups.*` or `settings.modules.view`.
 
 ---
 
@@ -907,8 +941,8 @@ Per-device records (one row per mobile install, keyed by `device_id`).
 | column         | type          | notes                                                                   |
 |----------------|---------------|-------------------------------------------------------------------------|
 | id             | INT auto-inc  |                                                                         |
-| station_id     | VARCHAR(20)   | logical reference — no FK                                               |
-| station_name   | VARCHAR(150)  | denormalized snapshot                                                   |
+| branch_id     | VARCHAR(20)   | logical reference — no FK                                               |
+| branch_name   | VARCHAR(150)  | denormalized snapshot                                                   |
 | user_id        | INT           | logical reference — no FK                                               |
 | user_name      | VARCHAR(255)  | denormalized snapshot                                                   |
 | **device_id**  | VARCHAR(190)  | **UNIQUE** — unique per installation (e.g. Expo install ID)             |
@@ -923,7 +957,7 @@ Per-device records (one row per mobile install, keyed by `device_id`).
 | created_at     | TIMESTAMP     |                                                                         |
 | updated_at     | TIMESTAMP     |                                                                         |
 
-Multiple rows with `device_id = NULL` are allowed (MySQL `UNIQUE` permits multiple NULLs) — the uniqueness constraint only applies to non-null values.
+> **MSSQL NULL + UNIQUE caveat:** unlike MySQL, SQL Server's `UNIQUE` constraint allows **at most one** NULL value. If you need multiple rows with `device_id = NULL`, swap the constraint for a filtered unique index (`CREATE UNIQUE INDEX uq_settings_device_id ON settings(device_id) WHERE device_id IS NOT NULL`). Current schema uses the plain `UNIQUE` constraint.
 
 ### `POST /api/settings/device`
 Required module: `settings.device.create`.
@@ -931,8 +965,8 @@ Required module: `settings.device.create`.
 **Body** (all optional)
 ```json
 {
-  "station_id": "MCH",
-  "station_name": "Marcos Highway",
+  "branch_id": "MCH",
+  "branch_name": "Marcos Highway",
   "user_id": 3,
   "user_name": "Operator One",
   "device_id": "EXP-ABC123XYZ",
@@ -946,7 +980,7 @@ Required module: `settings.device.create`.
 }
 ```
 
-No server-side validation that `station_id` or `user_id` reference real rows — add your own in the controller later if needed.
+No server-side validation that `branch_id` or `user_id` reference real rows — add your own in the controller later if needed.
 
 **201** → `{ "settings": {...} }` with every column populated.
 
@@ -1036,7 +1070,7 @@ The script is idempotent — if an `owner` already exists it exits without chang
 
 | Layer | Middleware | Granularity | Used by |
 |---|---|---|---|
-| Role | `authorize('owner', 'admin')` | Coarse — bars whole route trees from most roles | Admin-panel endpoints (stations, contracts, user creation) |
+| Role | `authorize('owner', 'admin')` | Coarse — bars whole route trees from most roles | Admin-panel endpoints (branches, contracts, user creation) |
 | Module | `requireModule('customer.view')` | Fine — per page + action | Mobile-app endpoints (anything the staff/operator app touches) |
 
 A route can use one, the other, or both. Both middlewares rely on `req.user` populated by `authenticate` from the JWT.
@@ -1065,11 +1099,11 @@ Seeded modules (via `npm run seed:modules`):
 | transactions          | view, create, edit, delete        |
 | users                 | view, create, edit, delete        |
 | settings.device       | view, create, edit, delete        |
-| settings.stations     | view, create, edit, delete        |
+| settings.branches     | view, create, edit, delete        |
 | settings.groups       | view, create, edit, delete        |
 | settings.modules      | view (catalog is code-managed)    |
 
-Settings is a container page with four sub-features; each gets its own token namespace. Wildcards cascade: `settings.*` grants everything under Settings, `settings.stations.*` grants every action on Stations, etc.
+Settings is a container page with four sub-features; each gets its own token namespace. Wildcards cascade: `settings.*` grants everything under Settings, `settings.branches.*` grants every action on Branches, etc.
 
 Module names are `page.action` strings, e.g. `customer.view`, `sales.edit`.
 
@@ -1080,7 +1114,7 @@ Each role is linked to a group in `module_groups`. When `POST /api/users` create
 |--------------------|----------------------------------------------------------------------------------------------------|
 | `staff_defaults`   | `home.view`, `customer.view`, `inventory.view`                                                     |
 | `operator_defaults`| staff + `sales.view`, `transactions.view`                                                          |
-| `admin_defaults`   | operator + `settings.device.*` + `settings.stations.*` (no groups/modules — those stay owner-only) |
+| `admin_defaults`   | operator + `settings.device.*` + `settings.branches.*` (no groups/modules — those stay owner-only) |
 | `owner_defaults`   | every module in the catalog, enumerated explicitly (25 modules at time of writing)                 |
 
 To change a group's contents, edit `DEFAULT_GROUPS` in `src/config/modules.ts` and re-run `npm run seed:modules`. The owner group is auto-generated from the full catalog, so adding a new module to `MODULE_CATALOG` automatically extends it.
@@ -1094,16 +1128,16 @@ On top of the role default, a user can be granted extra access via:
 - `users_modules_grp` — membership in additional groups (e.g. an accounting bundle)
 
 ### Wildcards
-Wildcards cascade up the dot hierarchy. For a check like `requireModule('settings.stations.edit')`, any of the following in the user's effective set grants access:
+Wildcards cascade up the dot hierarchy. For a check like `requireModule('settings.branches.edit')`, any of the following in the user's effective set grants access:
 
-| token in user's set       | grants `settings.stations.edit`? |
+| token in user's set       | grants `settings.branches.edit`? |
 |---------------------------|----------------------------------|
-| `settings.stations.edit`  | yes (exact)                      |
-| `settings.stations.*`     | yes (page wildcard)              |
+| `settings.branches.edit`  | yes (exact)                      |
+| `settings.branches.*`     | yes (page wildcard)              |
 | `settings.*`              | yes (section wildcard)           |
 | `*`                       | yes (used only for owner bypass) |
 | `customer.view`           | no                               |
-| `settings.stations.view`  | no (different action)            |
+| `settings.branches.view`  | no (different action)            |
 
 The algorithm walks every prefix level: for `a.b.c.d`, it checks `a.b.c.*`, `a.b.*`, `a.*`, then `*`.
 
@@ -1116,7 +1150,7 @@ The algorithm walks every prefix level: for `a.b.c.d`, it checks `a.b.c.*`, `a.b
 - **Changes take effect on next login.** Admin granting a new module to a logged-in user requires that user to log out and back in. If you need live-propagation, migrate to the DB-lookup variant of `getEffectiveModules`.
 
 ### Applying `requireModule` to routes
-Example (not currently applied — stations/contracts stay role-gated for now):
+Example (not currently applied — branches/contracts stay role-gated for now):
 
 ```ts
 router.get('/customers',      authenticate, requireModule('customer.view'),   listCustomers);

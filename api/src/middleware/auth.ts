@@ -4,11 +4,20 @@ import { env } from '../config/env';
 import { UserRole } from '../models/userModel';
 import { hasModule } from '../services/permissions';
 
+export interface AuthContract {
+  id: number;
+  branch_id: string;
+  branch_name: string | null;
+  start_date: string;
+  end_date: string | null;
+}
+
 export interface AuthPayload {
   id: number;
   email: string;
   role: UserRole;
   modules: string[];
+  contract: AuthContract | null;
 }
 
 declare global {
@@ -35,6 +44,7 @@ export const authenticate = (req: Request, res: Response, next: NextFunction): v
       email: decoded.email,
       role: decoded.role,
       modules: Array.isArray(decoded.modules) ? decoded.modules : [],
+      contract: decoded.contract ?? null,
     };
     next();
   } catch {

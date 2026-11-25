@@ -1,5 +1,4 @@
-import { RowDataPacket } from 'mysql2';
-import { pool } from '../config/database';
+import { RowDataPacket, pool } from '../config/database';
 
 export const getEffectiveModules = async (
   userId: number,
@@ -7,7 +6,7 @@ export const getEffectiveModules = async (
 ): Promise<string[]> => {
   if (role === 'owner') return ['*'];
 
-  const [rows] = await pool.query<RowDataPacket[]>(
+  const [rows] = await pool.query<RowDataPacket>(
     `
     SELECT module_name FROM user_modules WHERE user_id = ?
     UNION

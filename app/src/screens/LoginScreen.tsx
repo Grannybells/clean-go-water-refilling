@@ -37,7 +37,7 @@ export default function LoginScreen() {
     setSubmitting(true);
     setError(null);
     try {
-      await signIn(email.trim(), password);
+      await signIn(email.trim(), password, settings?.branch_id ?? null);
     } catch (err) {
       const message =
         err instanceof ApiError
@@ -50,11 +50,11 @@ export default function LoginScreen() {
   }
 
   const hasDeviceInfo = settings !== null;
-  const stationLabel = settings?.station_name
-    ? settings.station_id
-      ? `${settings.station_name} · ${settings.station_id}`
-      : settings.station_name
-    : settings?.station_id ?? null;
+  const branchLabel = settings?.branch_name
+    ? settings.branch_id
+      ? `${settings.branch_name} · ${settings.branch_id}`
+      : settings.branch_name
+    : settings?.branch_id ?? null;
   const userLabel = settings?.user_name ?? null;
 
   return (
@@ -78,6 +78,16 @@ export default function LoginScreen() {
               <Text className="text-[10px] font-semibold uppercase tracking-wide text-brand-600">
                 This device
               </Text>
+              {settings?.branch_id ? (
+                <Text className="mt-0.5 text-[11px] text-slate-500">
+                  Signing in against branch {settings.branch_id}.
+                </Text>
+              ) : (
+                <Text className="mt-0.5 text-[11px] text-amber-700">
+                  No branch bound. Operator/staff accounts need one assigned in
+                  device settings.
+                </Text>
+              )}
               <View className="mt-2 flex-row items-center gap-3">
                 <View className="h-9 w-9 items-center justify-center rounded-full bg-brand-100">
                   <Ionicons
@@ -87,12 +97,12 @@ export default function LoginScreen() {
                   />
                 </View>
                 <View className="flex-1">
-                  <Text className="text-[11px] text-slate-500">Station</Text>
+                  <Text className="text-[11px] text-slate-500">Branch</Text>
                   <Text
                     className="text-sm font-semibold text-slate-900"
                     numberOfLines={1}
                   >
-                    {stationLabel ?? "Not assigned"}
+                    {branchLabel ?? "Not assigned"}
                   </Text>
                 </View>
               </View>

@@ -17,59 +17,59 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/api";
 import {
-  createStation,
-  deleteStation,
-  updateStation,
-  type StationInput,
-} from "@/lib/stations";
-import type { Station } from "@/types/station";
+  createBranch,
+  deleteBranch,
+  updateBranch,
+  type BranchInput,
+} from "@/lib/branches";
+import type { Branch } from "@/types/branch";
 
 type Props = {
   visible: boolean;
-  station: Station | null;
+  branch: Branch | null;
   onClose: () => void;
-  onSaved: (station: Station) => void;
-  onDeleted: (stationId: string) => void;
+  onSaved: (branch: Branch) => void;
+  onDeleted: (branchId: string) => void;
 };
 
-const STATION_ID_RE = /^[A-Za-z0-9_-]{1,20}$/;
+const BRANCH_ID_RE = /^[A-Za-z0-9_-]{1,20}$/;
 
 type FormState = {
-  station_id: string;
-  station_name: string;
-  station_address: string;
-  station_lat: string;
-  station_lng: string;
+  branch_id: string;
+  branch_name: string;
+  branch_address: string;
+  branch_lat: string;
+  branch_lng: string;
   contact_number: string;
   description: string;
   is_active: boolean;
 };
 
-function initial(station: Station | null): FormState {
+function initial(branch: Branch | null): FormState {
   return {
-    station_id: station?.station_id ?? "",
-    station_name: station?.station_name ?? "",
-    station_address: station?.station_address ?? "",
-    station_lat: station?.station_lat ?? "",
-    station_lng: station?.station_lng ?? "",
-    contact_number: station?.contact_number ?? "",
-    description: station?.description ?? "",
+    branch_id: branch?.branch_id ?? "",
+    branch_name: branch?.branch_name ?? "",
+    branch_address: branch?.branch_address ?? "",
+    branch_lat: branch?.branch_lat ?? "",
+    branch_lng: branch?.branch_lng ?? "",
+    contact_number: branch?.contact_number ?? "",
+    description: branch?.description ?? "",
     is_active:
-      station === null
+      branch === null
         ? true
-        : station.is_active === true || station.is_active === 1,
+        : branch.is_active === true || branch.is_active === 1,
   };
 }
 
-export default function StationFormModal({
+export default function BranchFormModal({
   visible,
-  station,
+  branch,
   onClose,
   onSaved,
   onDeleted,
 }: Props) {
   const { hasModule } = useAuth();
-  const isEdit = station !== null;
+  const isEdit = branch !== null;
   const [form, setForm] = useState<FormState>(initial(null));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,32 +77,32 @@ export default function StationFormModal({
 
   useEffect(() => {
     if (!visible) return;
-    setForm(initial(station));
+    setForm(initial(branch));
     setError(null);
-  }, [visible, station]);
+  }, [visible, branch]);
 
-  const canEdit = hasModule(isEdit ? "settings.stations.edit" : "settings.stations.create");
-  const canDelete = isEdit && hasModule("settings.stations.delete");
+  const canEdit = hasModule(isEdit ? "settings.branches.edit" : "settings.branches.create");
+  const canDelete = isEdit && hasModule("settings.branches.delete");
 
   const idError =
-    !isEdit && form.station_id && !STATION_ID_RE.test(form.station_id.trim())
+    !isEdit && form.branch_id && !BRANCH_ID_RE.test(form.branch_id.trim())
       ? "Only letters, digits, underscore, hyphen (max 20)."
       : null;
   const latError =
-    form.station_lat && Number.isNaN(Number(form.station_lat))
+    form.branch_lat && Number.isNaN(Number(form.branch_lat))
       ? "Must be a number."
       : null;
   const lngError =
-    form.station_lng && Number.isNaN(Number(form.station_lng))
+    form.branch_lng && Number.isNaN(Number(form.branch_lng))
       ? "Must be a number."
       : null;
 
   const disabled =
     saving ||
     !canEdit ||
-    form.station_name.trim() === "" ||
-    form.station_address.trim() === "" ||
-    (!isEdit && form.station_id.trim() === "") ||
+    form.branch_name.trim() === "" ||
+    form.branch_address.trim() === "" ||
+    (!isEdit && form.branch_id.trim() === "") ||
     idError !== null ||
     latError !== null ||
     lngError !== null;
@@ -116,23 +116,23 @@ export default function StationFormModal({
     setSaving(true);
     setError(null);
     try {
-      const base: StationInput = {
-        station_name: form.station_name.trim(),
-        station_address: form.station_address.trim(),
-        station_lat: form.station_lat ? Number(form.station_lat) : null,
-        station_lng: form.station_lng ? Number(form.station_lng) : null,
+      const base: BranchInput = {
+        branch_name: form.branch_name.trim(),
+        branch_address: form.branch_address.trim(),
+        branch_lat: form.branch_lat ? Number(form.branch_lat) : null,
+        branch_lng: form.branch_lng ? Number(form.branch_lng) : null,
         contact_number: form.contact_number.trim() || null,
         description: form.description.trim() || null,
         is_active: form.is_active,
       };
       const saved = isEdit
-        ? await updateStation(station!.station_id, base)
-        : await createStation({ ...base, station_id: form.station_id.trim() });
+        ? await updateBranch(branch!.branch_id, base)
+        : await createBranch({ ...base, branch_id: form.branch_id.trim() });
       onSaved(saved);
       onClose();
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.message : "Could not save station.",
+        err instanceof ApiError ? err.message : "Could not save branch.",
       );
     } finally {
       setSaving(false);
@@ -140,15 +140,15 @@ export default function StationFormModal({
   }
 
   async function handleDelete() {
-    if (!station) return;
+    if (!branch) return;
     try {
-      await deleteStation(station.station_id);
-      onDeleted(station.station_id);
+      await deleteBranch(branch.branch_id);
+      onDeleted(branch.branch_id);
       setConfirmDelete(false);
       onClose();
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.message : "Could not delete station.",
+        err instanceof ApiError ? err.message : "Could not delete branch.",
       );
       setConfirmDelete(false);
     }
@@ -169,11 +169,11 @@ export default function StationFormModal({
           <View className="flex-row items-center justify-between border-b border-slate-100 px-5 py-4">
             <View>
               <Text className="text-lg font-bold text-slate-900">
-                {isEdit ? "Edit station" : "New station"}
+                {isEdit ? "Edit branch" : "New branch"}
               </Text>
               <Text className="text-xs text-slate-500">
                 {isEdit
-                  ? `ID: ${station?.station_id}`
+                  ? `ID: ${branch?.branch_id}`
                   : "Letters/digits/underscore/hyphen, max 20"}
               </Text>
             </View>
@@ -195,15 +195,15 @@ export default function StationFormModal({
             {!isEdit ? (
               <>
                 <Text className="mb-1 text-sm font-medium text-slate-700">
-                  Station ID
+                  Branch ID
                 </Text>
                 <TextInput
-                  value={form.station_id}
-                  onChangeText={(v) => set("station_id", v)}
+                  value={form.branch_id}
+                  onChangeText={(v) => set("branch_id", v)}
                   autoCapitalize="characters"
                   autoCorrect={false}
                   editable={canEdit && !saving}
-                  placeholder="e.g. ST-001"
+                  placeholder="e.g. BR-001"
                   maxLength={20}
                   className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-base text-slate-900"
                 />
@@ -214,13 +214,13 @@ export default function StationFormModal({
             ) : null}
 
             <Text className={`mb-1 ${isEdit ? "" : "mt-4"} text-sm font-medium text-slate-700`}>
-              Station name
+              Branch name
             </Text>
             <TextInput
-              value={form.station_name}
-              onChangeText={(v) => set("station_name", v)}
+              value={form.branch_name}
+              onChangeText={(v) => set("branch_name", v)}
               editable={canEdit && !saving}
-              placeholder="e.g. Main Branch"
+              placeholder="e.g. Downtown"
               className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-base text-slate-900"
             />
 
@@ -228,8 +228,8 @@ export default function StationFormModal({
               Address
             </Text>
             <TextInput
-              value={form.station_address}
-              onChangeText={(v) => set("station_address", v)}
+              value={form.branch_address}
+              onChangeText={(v) => set("branch_address", v)}
               editable={canEdit && !saving}
               placeholder="123 Rizal St, Manila"
               className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-base text-slate-900"
@@ -241,8 +241,8 @@ export default function StationFormModal({
                   Latitude
                 </Text>
                 <TextInput
-                  value={form.station_lat}
-                  onChangeText={(v) => set("station_lat", v)}
+                  value={form.branch_lat}
+                  onChangeText={(v) => set("branch_lat", v)}
                   keyboardType="numbers-and-punctuation"
                   editable={canEdit && !saving}
                   placeholder="14.59951"
@@ -257,8 +257,8 @@ export default function StationFormModal({
                   Longitude
                 </Text>
                 <TextInput
-                  value={form.station_lng}
-                  onChangeText={(v) => set("station_lng", v)}
+                  value={form.branch_lng}
+                  onChangeText={(v) => set("branch_lng", v)}
                   keyboardType="numbers-and-punctuation"
                   editable={canEdit && !saving}
                   placeholder="120.98421"
@@ -290,7 +290,7 @@ export default function StationFormModal({
               onChangeText={(v) => set("description", v)}
               editable={canEdit && !saving}
               multiline
-              placeholder="Main branch, open 24/7, etc."
+              placeholder="Downtown branch, open 24/7, etc."
               className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-base text-slate-900"
             />
 
@@ -300,7 +300,7 @@ export default function StationFormModal({
                   Active
                 </Text>
                 <Text className="text-xs text-slate-500">
-                  Inactive stations stay listed but are marked unavailable.
+                  Inactive branches stay listed but are marked unavailable.
                 </Text>
               </View>
               <Switch
@@ -337,7 +337,7 @@ export default function StationFormModal({
                   <ActivityIndicator color="#ffffff" />
                 ) : (
                   <Text className="text-center text-base font-semibold text-white">
-                    {isEdit ? "Save changes" : "Create station"}
+                    {isEdit ? "Save changes" : "Create branch"}
                   </Text>
                 )}
               </Pressable>
@@ -350,7 +350,7 @@ export default function StationFormModal({
                 className="mt-3 rounded-xl border border-red-200 bg-white px-4 py-3 active:bg-red-50"
               >
                 <Text className="text-center text-base font-semibold text-red-700">
-                  Delete station
+                  Delete branch
                 </Text>
               </Pressable>
             ) : null}
@@ -360,8 +360,8 @@ export default function StationFormModal({
 
       <ConfirmDialog
         visible={confirmDelete}
-        title="Delete station?"
-        message={`This hard-deletes "${station?.station_name ?? ""}". Any contracts pointing at it will become orphans.`}
+        title="Delete branch?"
+        message={`This hard-deletes "${branch?.branch_name ?? ""}". Any contracts pointing at it will become orphans.`}
         confirmLabel="Delete"
         destructive
         onCancel={() => setConfirmDelete(false)}

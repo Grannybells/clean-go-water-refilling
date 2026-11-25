@@ -1,5 +1,4 @@
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
-import { pool } from '../config/database';
+import { RowDataPacket, ResultSetHeader, pool } from '../config/database';
 
 export type UserRole = string;
 
@@ -43,48 +42,54 @@ export interface CreateUserInput {
   groups?: string[];
 }
 
-const SELECT_PUBLIC_USER = `
+const selectPublicUser = (extraWhere = ''): string => `
   SELECT
     u.id, u.email, u.role, u.created_at, u.updated_at,
     d.first_name, d.last_name, d.phone, d.address, d.birth_date, d.gender, d.avatar_url
   FROM users u
   LEFT JOIN user_details d ON d.user_id = u.id
+  ${extraWhere}
 `;
 
 export const findUserByEmail = async (email: string): Promise<UserAuth | null> => {
-  const [rows] = await pool.query<RowDataPacket[]>(
-    'SELECT id, email, password_hash, role, created_at, updated_at FROM users WHERE email = ? LIMIT 1',
+  const [rows] = await pool.query<RowDataPacket>(
+    'SELECT TOP 1 id, email, password_hash, role, created_at, updated_at FROM users WHERE email = ?',
     [email]
   );
   return (rows[0] as UserAuth) ?? null;
 };
 
 export const findPublicUserById = async (id: number): Promise<PublicUser | null> => {
-  const [rows] = await pool.query<RowDataPacket[]>(
-    `${SELECT_PUBLIC_USER} WHERE u.id = ? LIMIT 1`,
+  const [rows] = await pool.query<RowDataPacket>(
+    `SELECT TOP 1
+       u.id, u.email, u.role, u.created_at, u.updated_at,
+       d.first_name, d.last_name, d.phone, d.address, d.birth_date, d.gender, d.avatar_url
+     FROM users u
+     LEFT JOIN user_details d ON d.user_id = u.id
+     WHERE u.id = ?`,
     [id]
   );
   return (rows[0] as PublicUser) ?? null;
 };
 
 export const listUsers = async (): Promise<PublicUser[]> => {
-  const [rows] = await pool.query<RowDataPacket[]>(
-    `${SELECT_PUBLIC_USER} WHERE u.role != 'owner' ORDER BY u.id DESC`
+  const [rows] = await pool.query<RowDataPacket>(
+    `${selectPublicUser(`WHERE u.role <> 'owner'`)} ORDER BY u.id DESC`
   );
   return rows as PublicUser[];
 };
 
 export const roleExists = async (roleName: string): Promise<boolean> => {
-  const [rows] = await pool.query<RowDataPacket[]>(
-    'SELECT 1 FROM user_roles WHERE role_name = ? LIMIT 1',
+  const [rows] = await pool.query<RowDataPacket>(
+    'SELECT TOP 1 1 AS ok FROM user_roles WHERE role_name = ?',
     [roleName]
   );
   return rows.length > 0;
 };
 
 export const ownerExists = async (): Promise<boolean> => {
-  const [rows] = await pool.query<RowDataPacket[]>(
-    "SELECT 1 FROM users WHERE role = 'owner' LIMIT 1"
+  const [rows] = await pool.query<RowDataPacket>(
+    "SELECT TOP 1 1 AS ok FROM users WHERE role = 'owner'"
   );
   return rows.length > 0;
 };
@@ -128,7 +133,7 @@ export const updateUserDetails = async (
     `UPDATE user_details SET ${sets.join(', ')} WHERE user_id = ?`,
     values
   );
-  return result.affectedRows;
+  return result.affectedRows ?? 0;
 };
 
 export const createUser = async (input: CreateUserInput): Promise<number> => {
@@ -140,7 +145,7 @@ export const createUser = async (input: CreateUserInput): Promise<number> => {
       'INSERT INTO users (email, password_hash, role) VALUES (?, ?, ?)',
       [input.email, input.passwordHash, input.role]
     );
-    const userId = result.insertId;
+    const userId = result.insertId ?? 0;
 
     await conn.query(
       `INSERT INTO user_details
@@ -159,19 +164,21 @@ export const createUser = async (input: CreateUserInput): Promise<number> => {
     );
 
     if (input.modules && input.modules.length > 0) {
-      const values = input.modules.map((m) => [userId, m, input.createdBy ?? null]);
-      await conn.query(
-        'INSERT INTO user_modules (user_id, module_name, granted_by) VALUES ?',
-        [values]
-      );
+      for (const moduleName of input.modules) {
+        await conn.query(
+          'INSERT INTO user_modules (user_id, module_name, granted_by) VALUES (?, ?, ?)',
+          [userId, moduleName, input.createdBy ?? null]
+        );
+      }
     }
 
     if (input.groups && input.groups.length > 0) {
-      const values = input.groups.map((g) => [userId, g, input.createdBy ?? null]);
-      await conn.query(
-        'INSERT INTO users_modules_grp (user_id, group_name, assigned_by) VALUES ?',
-        [values]
-      );
+      for (const groupName of input.groups) {
+        await conn.query(
+          'INSERT INTO users_modules_grp (user_id, group_name, assigned_by) VALUES (?, ?, ?)',
+          [userId, groupName, input.createdBy ?? null]
+        );
+      }
     }
 
     await conn.commit();

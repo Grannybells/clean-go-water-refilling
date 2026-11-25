@@ -9,34 +9,34 @@ import {
   View,
 } from "react-native";
 
-import StationFormModal from "@/components/StationFormModal";
+import BranchFormModal from "@/components/BranchFormModal";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/api";
-import { listStations } from "@/lib/stations";
-import type { Station } from "@/types/station";
+import { listBranches } from "@/lib/branches";
+import type { Branch } from "@/types/branch";
 
-function isActive(station: Station): boolean {
-  return station.is_active === true || station.is_active === 1;
+function isActive(branch: Branch): boolean {
+  return branch.is_active === true || branch.is_active === 1;
 }
 
-export default function StationsScreen() {
+export default function BranchesScreen() {
   const { hasModule } = useAuth();
-  const [stations, setStations] = useState<Station[]>([]);
+  const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [editing, setEditing] = useState<Station | null>(null);
+  const [editing, setEditing] = useState<Branch | null>(null);
   const [formOpen, setFormOpen] = useState(false);
 
-  const canCreate = hasModule("settings.stations.create");
+  const canCreate = hasModule("settings.branches.create");
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      setStations(await listStations());
+      setBranches(await listBranches());
     } catch (err) {
       setError(
-        err instanceof ApiError ? err.message : "Could not load stations.",
+        err instanceof ApiError ? err.message : "Could not load branches.",
       );
     }
   }, []);
@@ -60,14 +60,14 @@ export default function StationsScreen() {
     setFormOpen(true);
   }
 
-  function openEdit(station: Station) {
-    setEditing(station);
+  function openEdit(branch: Branch) {
+    setEditing(branch);
     setFormOpen(true);
   }
 
-  function handleSaved(saved: Station) {
-    setStations((prev) => {
-      const idx = prev.findIndex((s) => s.station_id === saved.station_id);
+  function handleSaved(saved: Branch) {
+    setBranches((prev) => {
+      const idx = prev.findIndex((b) => b.branch_id === saved.branch_id);
       if (idx === -1) return [saved, ...prev];
       const next = prev.slice();
       next[idx] = saved;
@@ -76,7 +76,7 @@ export default function StationsScreen() {
   }
 
   function handleDeleted(id: string) {
-    setStations((prev) => prev.filter((s) => s.station_id !== id));
+    setBranches((prev) => prev.filter((b) => b.branch_id !== id));
   }
 
   if (loading) {
@@ -90,8 +90,8 @@ export default function StationsScreen() {
   return (
     <View className="flex-1 bg-brand-50">
       <FlatList
-        data={stations}
-        keyExtractor={(s) => s.station_id}
+        data={branches}
+        keyExtractor={(b) => b.branch_id}
         contentContainerStyle={{ padding: 16, paddingBottom: 96 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
@@ -107,7 +107,7 @@ export default function StationsScreen() {
         ListEmptyComponent={
           <View className="mt-16 items-center">
             <Ionicons name="business-outline" size={40} color="#94a3b8" />
-            <Text className="mt-2 text-sm text-slate-500">No stations yet.</Text>
+            <Text className="mt-2 text-sm text-slate-500">No branches yet.</Text>
           </View>
         }
         renderItem={({ item }) => (
@@ -118,10 +118,10 @@ export default function StationsScreen() {
             <View className="flex-row items-center justify-between">
               <View className="flex-1 pr-3">
                 <Text className="text-base font-semibold text-slate-900">
-                  {item.station_name}
+                  {item.branch_name}
                 </Text>
                 <Text className="text-xs text-slate-500">
-                  ID: {item.station_id}
+                  ID: {item.branch_id}
                 </Text>
               </View>
               <View className="flex-row items-center gap-2">
@@ -141,9 +141,9 @@ export default function StationsScreen() {
                 <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
               </View>
             </View>
-            {item.station_address ? (
+            {item.branch_address ? (
               <Text className="mt-2 text-xs text-slate-600">
-                {item.station_address}
+                {item.branch_address}
               </Text>
             ) : null}
             {item.contact_number ? (
@@ -164,9 +164,9 @@ export default function StationsScreen() {
         </Pressable>
       ) : null}
 
-      <StationFormModal
+      <BranchFormModal
         visible={formOpen}
-        station={editing}
+        branch={editing}
         onClose={() => setFormOpen(false)}
         onSaved={handleSaved}
         onDeleted={handleDeleted}

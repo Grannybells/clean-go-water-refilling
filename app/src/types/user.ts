@@ -15,10 +15,19 @@ export interface User {
   updated_at: string;
 }
 
+export interface LoginContract {
+  id: number;
+  branch_id: string;
+  branch_name: string | null;
+  start_date: string;
+  end_date: string | null;
+}
+
 export interface LoginResponse {
   user: User;
   token: string;
   modules: string[];
+  contract: LoginContract | null;
 }
 
 export interface MeResponse {

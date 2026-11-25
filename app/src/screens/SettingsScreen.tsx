@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 
-import StationPickerModal from "@/components/StationPickerModal";
+import BranchPickerModal from "@/components/BranchPickerModal";
 import UserPickerModal from "@/components/UserPickerModal";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/api";
@@ -23,24 +23,24 @@ import {
   getCachedSettings,
   updateSettings,
 } from "@/lib/settings";
-import { listStations } from "@/lib/stations";
+import { listBranches } from "@/lib/branches";
 import type { Settings } from "@/types/settings";
-import type { Station } from "@/types/station";
+import type { Branch } from "@/types/branch";
 import type { User } from "@/types/user";
 
 type Status = "loading" | "ready";
 
 type FormState = {
-  station_id: string;
-  station_name: string;
+  branch_id: string;
+  branch_name: string;
   user_id: number | null;
   user_name: string;
 };
 
 function initialForm(settings: Settings | null): FormState {
   return {
-    station_id: settings?.station_id ?? "",
-    station_name: settings?.station_name ?? "",
+    branch_id: settings?.branch_id ?? "",
+    branch_name: settings?.branch_name ?? "",
     user_id: settings?.user_id ?? null,
     user_name: settings?.user_name ?? "",
   };
@@ -70,9 +70,9 @@ export default function SettingsScreen() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
-  const [stations, setStations] = useState<Station[]>([]);
-  const [stationsError, setStationsError] = useState<string | null>(null);
-  const [stationPickerOpen, setStationPickerOpen] = useState(false);
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [branchesError, setBranchesError] = useState<string | null>(null);
+  const [branchPickerOpen, setBranchPickerOpen] = useState(false);
   const [userPickerOpen, setUserPickerOpen] = useState(false);
 
   const canEdit =
@@ -90,18 +90,18 @@ export default function SettingsScreen() {
     }
   }, []);
 
-  const loadStations = useCallback(async () => {
-    setStationsError(null);
+  const loadBranches = useCallback(async () => {
+    setBranchesError(null);
     try {
-      setStations(await listStations());
+      setBranches(await listBranches());
     } catch (err) {
-      setStations([]);
-      setStationsError(
+      setBranches([]);
+      setBranchesError(
         err instanceof ApiError
           ? err.status === 403
-            ? "You don't have access to the station list."
+            ? "You don't have access to the branch list."
             : err.message
-          : "Could not load stations.",
+          : "Could not load branches.",
       );
     }
   }, []);
@@ -130,15 +130,15 @@ export default function SettingsScreen() {
             setForm(initialForm(null));
           }
         })(),
-        loadStations(),
+        loadBranches(),
       ]);
     })();
-  }, [sync, loadStations]);
+  }, [sync, loadBranches]);
 
   async function handleRefresh() {
     if (!device) return;
     setRefreshing(true);
-    const [remote] = await Promise.all([sync(device), loadStations()]);
+    const [remote] = await Promise.all([sync(device), loadBranches()]);
     if (remote) {
       setSettings(remote);
       setForm(initialForm(remote));
@@ -161,8 +161,8 @@ export default function SettingsScreen() {
     setError(null);
     try {
       const payload = {
-        station_id: form.station_id.trim() || null,
-        station_name: form.station_name.trim() || null,
+        branch_id: form.branch_id.trim() || null,
+        branch_name: form.branch_name.trim() || null,
         user_id: form.user_id,
         user_name: form.user_name.trim() || null,
         device_id: device.device_id,
@@ -212,45 +212,45 @@ export default function SettingsScreen() {
           <View className="flex-row items-center gap-2">
             <Ionicons name="business-outline" size={18} color="#1858b8" />
             <Text className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              Station
+              Branch
             </Text>
           </View>
 
           <Text className="mb-1 mt-4 text-sm font-medium text-slate-700">
-            Assigned station
+            Assigned branch
           </Text>
           <Pressable
-            onPress={() => setStationPickerOpen(true)}
-            disabled={!canEdit || saving || stations.length === 0}
+            onPress={() => setBranchPickerOpen(true)}
+            disabled={!canEdit || saving || branches.length === 0}
             className={`flex-row items-center justify-between rounded-xl border px-4 py-3 ${
-              !canEdit || stations.length === 0
+              !canEdit || branches.length === 0
                 ? "border-slate-200 bg-slate-100"
                 : "border-slate-200 bg-slate-50 active:bg-brand-50"
             }`}
           >
             <View className="flex-1 pr-3">
-              {form.station_id ? (
+              {form.branch_id ? (
                 <>
                   <Text className="text-base font-semibold text-slate-900">
-                    {form.station_name || form.station_id}
+                    {form.branch_name || form.branch_id}
                   </Text>
                   <Text className="text-xs text-slate-500">
-                    ID: {form.station_id}
+                    ID: {form.branch_id}
                   </Text>
                 </>
               ) : (
                 <Text className="text-base text-slate-400">
-                  {stations.length === 0
-                    ? "No stations available"
-                    : "Choose a station"}
+                  {branches.length === 0
+                    ? "No branches available"
+                    : "Choose a branch"}
                 </Text>
               )}
             </View>
             <Ionicons name="chevron-down" size={18} color="#94a3b8" />
           </Pressable>
 
-          {stationsError ? (
-            <Text className="mt-2 text-xs text-red-600">{stationsError}</Text>
+          {branchesError ? (
+            <Text className="mt-2 text-xs text-red-600">{branchesError}</Text>
           ) : null}
         </View>
 
@@ -370,20 +370,20 @@ export default function SettingsScreen() {
         ) : null}
       </ScrollView>
 
-      <StationPickerModal
-        visible={stationPickerOpen}
-        stations={stations}
-        selectedId={form.station_id || null}
-        onClose={() => setStationPickerOpen(false)}
-        onSelect={(s) =>
+      <BranchPickerModal
+        visible={branchPickerOpen}
+        branches={branches}
+        selectedId={form.branch_id || null}
+        onClose={() => setBranchPickerOpen(false)}
+        onSelect={(b) =>
           setForm((p) => ({
             ...p,
-            station_id: s.station_id,
-            station_name: s.station_name,
+            branch_id: b.branch_id,
+            branch_name: b.branch_name,
           }))
         }
         onClear={() =>
-          setForm((p) => ({ ...p, station_id: "", station_name: "" }))
+          setForm((p) => ({ ...p, branch_id: "", branch_name: "" }))
         }
       />
 

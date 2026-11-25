@@ -1,10 +1,9 @@
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
-import { pool } from '../config/database';
+import { RowDataPacket, ResultSetHeader, pool } from '../config/database';
 
 export interface SettingsRow {
   id: number;
-  station_id: string | null;
-  station_name: string | null;
+  branch_id: string | null;
+  branch_name: string | null;
   user_id: number | null;
   user_name: string | null;
   device_id: string | null;
@@ -21,8 +20,8 @@ export interface SettingsRow {
 }
 
 export interface CreateSettingsInput {
-  station_id?: string | null;
-  station_name?: string | null;
+  branch_id?: string | null;
+  branch_name?: string | null;
   user_id?: number | null;
   user_name?: string | null;
   device_id?: string | null;
@@ -39,15 +38,15 @@ export interface CreateSettingsInput {
 export type UpdateSettingsInput = Partial<Omit<CreateSettingsInput, 'created_by'>>;
 
 export const listSettings = async (): Promise<SettingsRow[]> => {
-  const [rows] = await pool.query<RowDataPacket[]>(
+  const [rows] = await pool.query<RowDataPacket>(
     'SELECT * FROM settings ORDER BY created_at DESC'
   );
   return rows as SettingsRow[];
 };
 
 export const findSettingsById = async (id: number): Promise<SettingsRow | null> => {
-  const [rows] = await pool.query<RowDataPacket[]>(
-    'SELECT * FROM settings WHERE id = ? LIMIT 1',
+  const [rows] = await pool.query<RowDataPacket>(
+    'SELECT TOP 1 * FROM settings WHERE id = ?',
     [id]
   );
   return (rows[0] as SettingsRow) ?? null;
@@ -56,16 +55,16 @@ export const findSettingsById = async (id: number): Promise<SettingsRow | null> 
 export const findSettingsByDeviceId = async (
   deviceId: string
 ): Promise<SettingsRow | null> => {
-  const [rows] = await pool.query<RowDataPacket[]>(
-    'SELECT * FROM settings WHERE device_id = ? LIMIT 1',
+  const [rows] = await pool.query<RowDataPacket>(
+    'SELECT TOP 1 * FROM settings WHERE device_id = ?',
     [deviceId]
   );
   return (rows[0] as SettingsRow) ?? null;
 };
 
 const INSERT_FIELDS = [
-  'station_id',
-  'station_name',
+  'branch_id',
+  'branch_name',
   'user_id',
   'user_name',
   'device_id',
@@ -95,12 +94,12 @@ export const createSettings = async (input: CreateSettingsInput): Promise<number
     `INSERT INTO settings (${INSERT_FIELDS.join(', ')}) VALUES (${INSERT_FIELDS.map(() => '?').join(', ')})`,
     values
   );
-  return result.insertId;
+  return result.insertId ?? 0;
 };
 
 const UPDATABLE: Array<keyof UpdateSettingsInput> = [
-  'station_id',
-  'station_name',
+  'branch_id',
+  'branch_name',
   'user_id',
   'user_name',
   'device_id',
@@ -132,7 +131,7 @@ export const updateSettings = async (
     `UPDATE settings SET ${sets.join(', ')} WHERE id = ?`,
     values
   );
-  return result.affectedRows;
+  return result.affectedRows ?? 0;
 };
 
 export const deleteSettings = async (id: number): Promise<number> => {
@@ -140,5 +139,5 @@ export const deleteSettings = async (id: number): Promise<number> => {
     'DELETE FROM settings WHERE id = ?',
     [id]
   );
-  return result.affectedRows;
+  return result.affectedRows ?? 0;
 };

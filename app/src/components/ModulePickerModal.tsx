@@ -69,7 +69,6 @@ export default function ModulePickerModal({
     setError(null);
     try {
       await onPick(name);
-      onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not grant.");
     } finally {

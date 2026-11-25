@@ -1,5 +1,4 @@
-import { RowDataPacket, ResultSetHeader } from 'mysql2';
-import { pool } from '../config/database';
+import { RowDataPacket, ResultSetHeader, pool } from '../config/database';
 
 export interface ModuleGroupSummary {
   group_name: string;
@@ -16,13 +15,14 @@ export interface ModuleGroupDetail {
 }
 
 export const listGroups = async (): Promise<ModuleGroupSummary[]> => {
-  const [groups] = await pool.query<RowDataPacket[]>(
-    `SELECT group_name, GROUP_CONCAT(module_name ORDER BY module_name) AS modules
+  const [groups] = await pool.query<RowDataPacket>(
+    `SELECT group_name,
+            STRING_AGG(module_name, ',') WITHIN GROUP (ORDER BY module_name) AS modules
      FROM module_groups
      GROUP BY group_name
      ORDER BY group_name`
   );
-  const [users] = await pool.query<RowDataPacket[]>(
+  const [users] = await pool.query<RowDataPacket>(
     'SELECT group_name, COUNT(*) AS n FROM users_modules_grp GROUP BY group_name'
   );
   const userCounts = new Map<string, number>(
@@ -36,7 +36,7 @@ export const listGroups = async (): Promise<ModuleGroupSummary[]> => {
 };
 
 export const findGroup = async (name: string): Promise<ModuleGroupDetail | null> => {
-  const [rows] = await pool.query<RowDataPacket[]>(
+  const [rows] = await pool.query<RowDataPacket>(
     `SELECT module_name, description, created_at
      FROM module_groups
      WHERE group_name = ?
@@ -45,7 +45,7 @@ export const findGroup = async (name: string): Promise<ModuleGroupDetail | null>
   );
   if (rows.length === 0) return null;
 
-  const [userRows] = await pool.query<RowDataPacket[]>(
+  const [userRows] = await pool.query<RowDataPacket>(
     'SELECT COUNT(*) AS n FROM users_modules_grp WHERE group_name = ?',
     [name]
   );
@@ -60,8 +60,8 @@ export const findGroup = async (name: string): Promise<ModuleGroupDetail | null>
 };
 
 export const groupExistsByName = async (name: string): Promise<boolean> => {
-  const [rows] = await pool.query<RowDataPacket[]>(
-    'SELECT 1 FROM module_groups WHERE group_name = ? LIMIT 1',
+  const [rows] = await pool.query<RowDataPacket>(
+    'SELECT TOP 1 1 AS ok FROM module_groups WHERE group_name = ?',
     [name]
   );
   return rows.length > 0;
@@ -71,8 +71,8 @@ export const groupContainsModule = async (
   name: string,
   moduleName: string
 ): Promise<boolean> => {
-  const [rows] = await pool.query<RowDataPacket[]>(
-    'SELECT 1 FROM module_groups WHERE group_name = ? AND module_name = ? LIMIT 1',
+  const [rows] = await pool.query<RowDataPacket>(
+    'SELECT TOP 1 1 AS ok FROM module_groups WHERE group_name = ? AND module_name = ?',
     [name, moduleName]
   );
   return rows.length > 0;
@@ -84,11 +84,12 @@ export const createGroup = async (
   description: string | null,
   createdBy: number | null
 ): Promise<void> => {
-  const values = moduleNames.map((m) => [name, m, description, createdBy]);
-  await pool.query(
-    'INSERT INTO module_groups (group_name, module_name, description, created_by) VALUES ?',
-    [values]
-  );
+  for (const moduleName of moduleNames) {
+    await pool.query(
+      'INSERT INTO module_groups (group_name, module_name, description, created_by) VALUES (?, ?, ?, ?)',
+      [name, moduleName, description, createdBy]
+    );
+  }
 };
 
 export const addModuleToGroup = async (
@@ -111,7 +112,7 @@ export const removeModuleFromGroup = async (
     'DELETE FROM module_groups WHERE group_name = ? AND module_name = ?',
     [name, moduleName]
   );
-  return result.affectedRows;
+  return result.affectedRows ?? 0;
 };
 
 export const deleteGroupCascade = async (
@@ -130,8 +131,8 @@ export const deleteGroupCascade = async (
     );
     await conn.commit();
     return {
-      modulesRemoved: modulesResult.affectedRows,
-      membershipsRemoved: membershipsResult.affectedRows,
+      modulesRemoved: modulesResult.affectedRows ?? 0,
+      membershipsRemoved: membershipsResult.affectedRows ?? 0,
     };
   } catch (err) {
     await conn.rollback();
@@ -158,8 +159,8 @@ export const renameGroupCascade = async (
     );
     await conn.commit();
     return {
-      modulesRenamed: modulesResult.affectedRows,
-      membershipsRenamed: membershipsResult.affectedRows,
+      modulesRenamed: modulesResult.affectedRows ?? 0,
+      membershipsRenamed: membershipsResult.affectedRows ?? 0,
     };
   } catch (err) {
     await conn.rollback();

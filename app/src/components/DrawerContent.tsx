@@ -31,6 +31,21 @@ type MenuNode = Leaf | Branch;
 
 const MENU: MenuNode[] = [
   { kind: "leaf", label: "Home", path: "/", icon: "home-outline", module: "home.view" },
+  { kind: "leaf", label: "POS", path: "/pos", icon: "calculator-outline", module: "pos.view" },
+  {
+    kind: "leaf",
+    label: "Pickups",
+    path: "/pickup",
+    icon: "cube-outline",
+    module: "pickup.view",
+  },
+  {
+    kind: "leaf",
+    label: "Deliveries",
+    path: "/delivery",
+    icon: "car-outline",
+    module: "delivery.view",
+  },
   {
     kind: "leaf",
     label: "Customers",
@@ -75,10 +90,10 @@ const MENU: MenuNode[] = [
       },
       {
         kind: "leaf",
-        label: "Stations",
-        path: "/settings/stations",
+        label: "Branches",
+        path: "/settings/branches",
         icon: "business-outline",
-        module: "settings.stations.view",
+        module: "settings.branches.view",
       },
       {
         kind: "leaf",

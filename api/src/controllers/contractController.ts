@@ -7,7 +7,7 @@ import {
   updateContract,
   userExists,
 } from '../models/contractModel';
-import { stationExists } from '../models/stationModel';
+import { branchExists } from '../models/branchModel';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -20,10 +20,10 @@ export const createContractHandler = async (req: Request, res: Response): Promis
     return;
   }
 
-  const { user_id, station_id, start_date, end_date } = req.body ?? {};
+  const { user_id, branch_id, start_date, end_date } = req.body ?? {};
 
-  if (user_id === undefined || !station_id || !start_date) {
-    res.status(400).json({ message: 'user_id, station_id, and start_date are required' });
+  if (user_id === undefined || !branch_id || !start_date) {
+    res.status(400).json({ message: 'user_id, branch_id, and start_date are required' });
     return;
   }
   if (typeof user_id !== 'number' || !Number.isInteger(user_id)) {
@@ -47,14 +47,14 @@ export const createContractHandler = async (req: Request, res: Response): Promis
     res.status(404).json({ message: `User ${user_id} not found` });
     return;
   }
-  if (!(await stationExists(station_id))) {
-    res.status(404).json({ message: `Station '${station_id}' not found` });
+  if (!(await branchExists(branch_id))) {
+    res.status(404).json({ message: `Branch '${branch_id}' not found` });
     return;
   }
 
   const id = await createContract({
     user_id,
-    station_id,
+    branch_id,
     start_date,
     end_date: end_date ?? null,
     created_by: req.user.id,
@@ -66,9 +66,9 @@ export const createContractHandler = async (req: Request, res: Response): Promis
 
 export const listContractsHandler = async (req: Request, res: Response): Promise<void> => {
   const userIdQ = req.query.user_id;
-  const stationIdQ = req.query.station_id;
+  const branchIdQ = req.query.branch_id;
 
-  const filters: { user_id?: number; station_id?: string } = {};
+  const filters: { user_id?: number; branch_id?: string } = {};
   if (typeof userIdQ === 'string' && userIdQ.length > 0) {
     const n = Number(userIdQ);
     if (!Number.isInteger(n)) {
@@ -77,8 +77,8 @@ export const listContractsHandler = async (req: Request, res: Response): Promise
     }
     filters.user_id = n;
   }
-  if (typeof stationIdQ === 'string' && stationIdQ.length > 0) {
-    filters.station_id = stationIdQ;
+  if (typeof branchIdQ === 'string' && branchIdQ.length > 0) {
+    filters.branch_id = branchIdQ;
   }
 
   const contracts = await listContracts(filters);
@@ -112,7 +112,7 @@ export const updateContractHandler = async (req: Request, res: Response): Promis
     return;
   }
 
-  const { user_id, station_id, start_date, end_date } = req.body ?? {};
+  const { user_id, branch_id, start_date, end_date } = req.body ?? {};
 
   if (user_id !== undefined) {
     if (typeof user_id !== 'number' || !Number.isInteger(user_id)) {
@@ -124,13 +124,13 @@ export const updateContractHandler = async (req: Request, res: Response): Promis
       return;
     }
   }
-  if (station_id !== undefined) {
-    if (typeof station_id !== 'string' || !station_id) {
-      res.status(400).json({ message: 'station_id must be a non-empty string' });
+  if (branch_id !== undefined) {
+    if (typeof branch_id !== 'string' || !branch_id) {
+      res.status(400).json({ message: 'branch_id must be a non-empty string' });
       return;
     }
-    if (!(await stationExists(station_id))) {
-      res.status(404).json({ message: `Station '${station_id}' not found` });
+    if (!(await branchExists(branch_id))) {
+      res.status(404).json({ message: `Branch '${branch_id}' not found` });
       return;
     }
   }
@@ -151,7 +151,7 @@ export const updateContractHandler = async (req: Request, res: Response): Promis
     return;
   }
 
-  const affected = await updateContract(id, { user_id, station_id, start_date, end_date });
+  const affected = await updateContract(id, { user_id, branch_id, start_date, end_date });
   if (affected === 0) {
     res.status(400).json({ message: 'No valid fields provided for update' });
     return;

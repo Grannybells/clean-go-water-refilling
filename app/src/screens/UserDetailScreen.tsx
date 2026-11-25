@@ -11,12 +11,18 @@ import {
 } from "react-native";
 
 import ConfirmDialog from "@/components/ConfirmDialog";
+import ContractFormModal from "@/components/ContractFormModal";
 import GroupPickerModal from "@/components/GroupPickerModal";
 import ModulePickerModal from "@/components/ModulePickerModal";
 import RoleChangeModal from "@/components/RoleChangeModal";
 import UserProfileEditModal from "@/components/UserProfileEditModal";
 import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/lib/api";
+import {
+  deleteContract as deleteContractApi,
+  listContracts,
+} from "@/lib/contracts";
+import { formatDate, formatDateTime, toISODate, todayISODate } from "@/lib/dates";
 import {
   assignUserGroup,
   getUser,
@@ -25,6 +31,7 @@ import {
   revokeUserModule,
   type UserDetail,
 } from "@/lib/users";
+import type { Contract } from "@/types/contract";
 import type { User } from "@/types/user";
 
 function roleStyle(role: string): { bg: string; fg: string } {
@@ -46,12 +53,13 @@ function initials(first: string, last: string, email: string): string {
   return (a + b || email[0] || "?").toUpperCase();
 }
 
-function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
+function isContractActive(c: Contract): boolean {
+  const today = todayISODate();
+  const start = toISODate(c.start_date);
+  const end = toISODate(c.end_date);
+  if (start && start > today) return false;
+  if (end && end < today) return false;
+  return true;
 }
 
 function ModuleChip({ name }: { name: string }) {
@@ -89,6 +97,7 @@ export default function UserDetailScreen() {
   const canEditProfile = isSelf || hasModule("users.edit");
   const canChangeRole = me?.role === "owner" && !isSelf;
   const canManagePerms = me?.role === "owner";
+  const canManageContracts = me?.role === "owner" || me?.role === "admin";
 
   const [modulePickerOpen, setModulePickerOpen] = useState(false);
   const [groupPickerOpen, setGroupPickerOpen] = useState(false);
@@ -97,14 +106,37 @@ export default function UserDetailScreen() {
   const [mutating, setMutating] = useState(false);
   const [mutateError, setMutateError] = useState<string | null>(null);
 
+  const [contracts, setContracts] = useState<Contract[]>([]);
+  const [contractsError, setContractsError] = useState<string | null>(null);
+  const [contractFormOpen, setContractFormOpen] = useState(false);
+  const [editingContract, setEditingContract] = useState<Contract | null>(null);
+  const [confirmDeleteContract, setConfirmDeleteContract] =
+    useState<Contract | null>(null);
+
+  const loadContracts = useCallback(async () => {
+    setContractsError(null);
+    try {
+      const rows = await listContracts({ user_id: userId });
+      setContracts(rows);
+    } catch (err) {
+      setContractsError(
+        err instanceof ApiError ? err.message : "Could not load contracts.",
+      );
+    }
+  }, [userId]);
+
   const load = useCallback(async () => {
     setError(null);
     try {
-      setData(await getUser(userId));
+      const [detail] = await Promise.all([
+        getUser(userId),
+        canManageContracts ? loadContracts() : Promise.resolve(),
+      ]);
+      setData(detail);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not load user.");
     }
-  }, [userId]);
+  }, [userId, canManageContracts, loadContracts]);
 
   useEffect(() => {
     if (!Number.isInteger(userId) || userId <= 0) {
@@ -199,6 +231,37 @@ export default function UserDetailScreen() {
     }
   }
 
+  function openNewContract() {
+    setEditingContract(null);
+    setContractFormOpen(true);
+  }
+
+  function openEditContract(contract: Contract) {
+    setEditingContract(contract);
+    setContractFormOpen(true);
+  }
+
+  async function handleContractSaved() {
+    await loadContracts();
+  }
+
+  async function handleDeleteContract(contract: Contract) {
+    setMutating(true);
+    setMutateError(null);
+    try {
+      await deleteContractApi(contract.id);
+      await loadContracts();
+      setConfirmDeleteContract(null);
+    } catch (err) {
+      setMutateError(
+        err instanceof ApiError ? err.message : "Could not delete contract.",
+      );
+      setConfirmDeleteContract(null);
+    } finally {
+      setMutating(false);
+    }
+  }
+
   return (
     <View className="flex-1 bg-brand-50">
       <View className="flex-row items-center border-b border-slate-100 bg-white px-4 py-3">
@@ -281,9 +344,96 @@ export default function UserDetailScreen() {
             <Row label="Address" value={data.user.address} />
             <Row label="Birth date" value={data.user.birth_date} />
             <Row label="Gender" value={data.user.gender} />
-            <Row label="Created" value={formatDate(data.user.created_at)} />
-            <Row label="Updated" value={formatDate(data.user.updated_at)} />
+            <Row label="Created" value={formatDateTime(data.user.created_at)} />
+            <Row label="Updated" value={formatDateTime(data.user.updated_at)} />
           </View>
+
+          {canManageContracts ? (
+            <View className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
+              <View className="flex-row items-center justify-between">
+                <Text className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  Contracts
+                </Text>
+                <Pressable
+                  onPress={openNewContract}
+                  disabled={mutating}
+                  hitSlop={8}
+                  className="h-8 w-8 items-center justify-center rounded-full bg-brand-100 active:bg-brand-200"
+                >
+                  <Ionicons name="add" size={18} color="#1858b8" />
+                </Pressable>
+              </View>
+              <Text className="mt-0.5 text-xs text-slate-500">
+                Branch assignments. Operator/staff need an active contract to
+                log in.
+              </Text>
+              {contractsError ? (
+                <View className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3">
+                  <Text className="text-sm text-red-700">{contractsError}</Text>
+                </View>
+              ) : null}
+              {contracts.length === 0 && !contractsError ? (
+                <Text className="mt-3 text-sm text-slate-500">
+                  No contracts yet.
+                </Text>
+              ) : (
+                <View className="mt-3 gap-3">
+                  {contracts.map((c) => {
+                    const active = isContractActive(c);
+                    return (
+                      <Pressable
+                        key={c.id}
+                        onPress={() => openEditContract(c)}
+                        disabled={mutating}
+                        className="rounded-xl border border-slate-100 bg-slate-50 p-3 active:bg-slate-100"
+                      >
+                        <View className="flex-row items-start justify-between">
+                          <View className="flex-1 pr-2">
+                            <Text className="text-sm font-semibold text-slate-800">
+                              {c.branch_name ?? c.branch_id}
+                            </Text>
+                            <Text className="text-[11px] text-slate-500">
+                              {formatDate(c.start_date)} →{" "}
+                              {c.end_date ? formatDate(c.end_date) : "open-ended"}
+                            </Text>
+                          </View>
+                          <View className="flex-row items-center gap-2">
+                            <View
+                              className={`rounded-full px-2 py-0.5 ${
+                                active ? "bg-emerald-100" : "bg-slate-200"
+                              }`}
+                            >
+                              <Text
+                                className={`text-[10px] font-semibold uppercase tracking-wide ${
+                                  active
+                                    ? "text-emerald-800"
+                                    : "text-slate-600"
+                                }`}
+                              >
+                                {active ? "active" : "inactive"}
+                              </Text>
+                            </View>
+                            <Pressable
+                              onPress={() => setConfirmDeleteContract(c)}
+                              disabled={mutating}
+                              hitSlop={8}
+                              className="h-8 w-8 items-center justify-center rounded-full active:bg-red-50"
+                            >
+                              <Ionicons
+                                name="trash-outline"
+                                size={16}
+                                color="#dc2626"
+                              />
+                            </Pressable>
+                          </View>
+                        </View>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          ) : null}
 
           <View className="mt-4 rounded-2xl bg-white p-5 shadow-sm">
             <Text className="text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -339,7 +489,7 @@ export default function UserDetailScreen() {
                           {g.group_name}
                         </Text>
                         <Text className="text-[11px] text-slate-500">
-                          joined {formatDate(g.created_at)}
+                          joined {formatDateTime(g.created_at)}
                         </Text>
                       </View>
                       {canManagePerms ? (
@@ -403,7 +553,7 @@ export default function UserDetailScreen() {
                         {g.module_name}
                       </Text>
                       <Text className="text-[11px] text-slate-500">
-                        {formatDate(g.created_at)}
+                        {formatDateTime(g.created_at)}
                       </Text>
                     </View>
                     {canManagePerms ? (
@@ -485,6 +635,34 @@ export default function UserDetailScreen() {
                 : Promise.resolve()
             }
           />
+          {canManageContracts ? (
+            <>
+              <ContractFormModal
+                visible={contractFormOpen}
+                userId={userId}
+                contract={editingContract}
+                onClose={() => setContractFormOpen(false)}
+                onSaved={handleContractSaved}
+              />
+              <ConfirmDialog
+                visible={confirmDeleteContract !== null}
+                title="Delete contract?"
+                message={`Removes the assignment to "${
+                  confirmDeleteContract?.branch_name ??
+                  confirmDeleteContract?.branch_id ??
+                  ""
+                }". If this user is operator/staff, they may lose login access.`}
+                confirmLabel="Delete"
+                destructive
+                onCancel={() => setConfirmDeleteContract(null)}
+                onConfirm={() =>
+                  confirmDeleteContract
+                    ? handleDeleteContract(confirmDeleteContract)
+                    : Promise.resolve()
+                }
+              />
+            </>
+          ) : null}
         </>
       ) : null}
     </View>

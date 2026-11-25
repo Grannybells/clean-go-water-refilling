@@ -1,21 +1,30 @@
+import path from 'path';
 import dotenv from 'dotenv';
 
-dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '..', '..', '.env') });
 
 const required = (name: string, value: string | undefined): string => {
   if (!value) throw new Error(`Missing required env var: ${name}`);
   return value;
 };
 
+const rawServer = required('DB_SERVER', process.env.DB_SERVER);
+const [serverHost, instanceName] = rawServer.split('\\');
+
+const rawPort = process.env.PORT ?? '3000';
+const parsedPort = Number(rawPort);
+const port: number | string = Number.isFinite(parsedPort) ? parsedPort : rawPort;
+
 export const env = {
-  port: Number(process.env.PORT ?? 3000),
+  port,
   nodeEnv: process.env.NODE_ENV ?? 'development',
   db: {
-    host: required('DB_HOST', process.env.DB_HOST),
-    port: Number(process.env.DB_PORT ?? 3306),
+    server: serverHost,
+    instanceName: instanceName || undefined,
+    port: process.env.DB_PORT ? Number(process.env.DB_PORT) : undefined,
     user: required('DB_USER', process.env.DB_USER),
     password: process.env.DB_PASSWORD ?? '',
-    name: required('DB_NAME', process.env.DB_NAME),
+    database: required('DB_DATABASE', process.env.DB_DATABASE),
   },
   jwt: {
     secret: required('JWT_SECRET', process.env.JWT_SECRET),
