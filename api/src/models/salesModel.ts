@@ -8,6 +8,8 @@ export interface TxnHeader {
   wth_cuscode: string | null;
   wth_type: 'WI' | 'PU' | 'DL';
   wth_totalamt: number;
+  wth_balanceamt: number;
+  wth_balancestatus: 'PD' | 'UP';
   wth_payoption: string | null;
   wth_status: string;
   wth_datecreated: string;
@@ -31,7 +33,7 @@ export const listTransactions = async (
   if (branchId) {
     const [rows] = await pool.query<RowDataPacket>(
       `SELECT wth_refno, wth_stncode, wth_docno, wth_date, wth_cuscode,
-              wth_type, wth_totalamt, wth_payoption, wth_status,
+              wth_type, wth_totalamt, wth_balanceamt, wth_balancestatus, wth_payoption, wth_status,
               wth_datecreated, wth_userid
          FROM water_tranheader
          WHERE wth_stncode = ?
@@ -42,7 +44,7 @@ export const listTransactions = async (
   }
   const [rows] = await pool.query<RowDataPacket>(
     `SELECT wth_refno, wth_stncode, wth_docno, wth_date, wth_cuscode,
-            wth_type, wth_totalamt, wth_payoption, wth_status,
+            wth_type, wth_totalamt, wth_balanceamt, wth_balancestatus, wth_payoption, wth_status,
             wth_datecreated, wth_userid
        FROM water_tranheader
        ORDER BY wth_datecreated DESC`
@@ -55,7 +57,7 @@ export const findTransactionByDocno = async (
 ): Promise<TxnHeader | null> => {
   const [rows] = await pool.query<RowDataPacket>(
     `SELECT TOP 1 wth_refno, wth_stncode, wth_docno, wth_date, wth_cuscode,
-            wth_type, wth_totalamt, wth_payoption, wth_status,
+            wth_type, wth_totalamt, wth_balanceamt, wth_balancestatus, wth_payoption, wth_status,
             wth_datecreated, wth_userid
        FROM water_tranheader
        WHERE wth_docno = ?`,
@@ -159,7 +161,7 @@ export const listPendingPickups = async (
   if (branchId) {
     const [rows] = await pool.query<RowDataPacket>(
       `SELECT wth_refno, wth_stncode, wth_docno, wth_date, wth_cuscode,
-              wth_type, wth_totalamt, wth_payoption, wth_status,
+              wth_type, wth_totalamt, wth_balanceamt, wth_balancestatus, wth_payoption, wth_status,
               wth_datecreated, wth_userid
          FROM water_tranheader
          WHERE wth_type = 'PU' AND wth_status = 'P' AND wth_stncode = ?
@@ -170,7 +172,7 @@ export const listPendingPickups = async (
   }
   const [rows] = await pool.query<RowDataPacket>(
     `SELECT wth_refno, wth_stncode, wth_docno, wth_date, wth_cuscode,
-            wth_type, wth_totalamt, wth_payoption, wth_status,
+            wth_type, wth_totalamt, wth_balanceamt, wth_balancestatus, wth_payoption, wth_status,
             wth_datecreated, wth_userid
        FROM water_tranheader
        WHERE wth_type = 'PU' AND wth_status = 'P'
@@ -237,6 +239,95 @@ export const listTransactionDetails = async (
 
 export type TxnType = 'WI' | 'PU' | 'DL';
 export type PayOption = 'CS' | 'QR' | 'GC' | 'CR';
+export type WthStatus = 'C' | 'P' | 'D';
+export type BalanceStatus = 'PD' | 'UP';
+
+export interface UpdateSaleInput {
+  status?: WthStatus;
+  balancestatus?: BalanceStatus;
+}
+
+export const updateSale = async (
+  docno: string,
+  input: UpdateSaleInput
+): Promise<number> => {
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  if (input.status) {
+    sets.push('wth_status = ?');
+    values.push(input.status);
+  }
+  if (input.balancestatus) {
+    sets.push('wth_balancestatus = ?');
+    values.push(input.balancestatus);
+    if (input.balancestatus === 'PD') {
+      sets.push('wth_balanceamt = 0');
+    }
+  }
+  if (sets.length === 0) return 0;
+  values.push(docno);
+  const [result] = await pool.query<ResultSetHeader>(
+    `UPDATE water_tranheader SET ${sets.join(', ')} WHERE wth_docno = ?`,
+    values
+  );
+  return result.affectedRows ?? 0;
+};
+
+export type CollectResult =
+  | { ok: true; balanceamt: number; balancestatus: BalanceStatus }
+  | { ok: false; reason: 'not_found' | 'already_paid' | 'overpay'; currentBalance?: number };
+
+/**
+ * Atomically decrement wth_balanceamt by `amount`. Flips wth_balancestatus to
+ * 'PD' only when the remaining balance hits 0. Rejects overpayment so the
+ * ledger can't go negative — callers should clamp the input or show an error.
+ */
+export const collectPayment = async (
+  docno: string,
+  amount: number
+): Promise<CollectResult> => {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [rows] = await conn.query<RowDataPacket>(
+      `SELECT wth_balanceamt, wth_balancestatus
+         FROM water_tranheader WITH (UPDLOCK, HOLDLOCK)
+        WHERE wth_docno = ?`,
+      [docno]
+    );
+    const row = rows[0] as
+      | { wth_balanceamt: number; wth_balancestatus: BalanceStatus }
+      | undefined;
+    if (!row) {
+      await conn.rollback();
+      return { ok: false, reason: 'not_found' };
+    }
+    const current = Number(row.wth_balanceamt) || 0;
+    if (row.wth_balancestatus !== 'UP' || current <= 0) {
+      await conn.rollback();
+      return { ok: false, reason: 'already_paid', currentBalance: current };
+    }
+    if (amount > current) {
+      await conn.rollback();
+      return { ok: false, reason: 'overpay', currentBalance: current };
+    }
+    const next = Number((current - amount).toFixed(2));
+    const nextStatus: BalanceStatus = next <= 0 ? 'PD' : 'UP';
+    await conn.query<ResultSetHeader>(
+      `UPDATE water_tranheader
+         SET wth_balanceamt = ?, wth_balancestatus = ?
+       WHERE wth_docno = ?`,
+      [next, nextStatus, docno]
+    );
+    await conn.commit();
+    return { ok: true, balanceamt: next, balancestatus: nextStatus };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+};
 
 export interface TxnLineInput {
   wr_code: string;
@@ -252,6 +343,7 @@ export interface CreateTxnInput {
   totalamt: number;
   userid: number | null;
   lines: TxnLineInput[];
+  paylater: boolean;
 }
 
 export interface CreatedTxn {
@@ -295,13 +387,16 @@ export const createTransaction = async (
 
     const docno = await nextDocNo(currentYYMM());
     const status = input.type === 'WI' ? 'C' : 'P';
+    const balanceamt = input.paylater ? input.totalamt : 0;
+    const balancestatus = input.paylater ? 'UP' : 'PD';
+    const payoption = input.paylater ? 'CR' : input.payoption;
 
     const [headerRes] = await conn.query<ResultSetHeader>(
       `INSERT INTO water_tranheader
          (wth_stncode, wth_docno, wth_date, wth_cuscode, wth_type,
-          wth_totalamt, wth_payoption, wth_status,
+          wth_totalamt, wth_balanceamt, wth_balancestatus, wth_payoption, wth_status,
           wth_datecreated, wth_userid)
-       VALUES (?, ?, CAST(SYSUTCDATETIME() AS DATE), ?, ?, ?, ?, ?,
+       VALUES (?, ?, CAST(SYSUTCDATETIME() AS DATE), ?, ?, ?, ?, ?, ?, ?,
                SYSUTCDATETIME(), ?)`,
       [
         input.stncode,
@@ -309,7 +404,9 @@ export const createTransaction = async (
         input.cuscode,
         input.type,
         input.totalamt,
-        input.payoption,
+        balanceamt,
+        balancestatus,
+        payoption,
         status,
         input.userid,
       ]

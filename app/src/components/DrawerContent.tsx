@@ -3,7 +3,7 @@ import {
   DrawerContentComponentProps,
   DrawerContentScrollView,
 } from "@react-navigation/drawer";
-import { router } from "expo-router";
+import { router, usePathname } from "expo-router";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 
@@ -31,7 +31,6 @@ type MenuNode = Leaf | Branch;
 
 const MENU: MenuNode[] = [
   { kind: "leaf", label: "Home", path: "/", icon: "home-outline", module: "home.view" },
-  { kind: "leaf", label: "POS", path: "/pos", icon: "calculator-outline", module: "pos.view" },
   {
     kind: "leaf",
     label: "Pickups",
@@ -53,13 +52,27 @@ const MENU: MenuNode[] = [
     icon: "people-outline",
     module: "customer.view",
   },
-  { kind: "leaf", label: "Sales", path: "/sales", icon: "cash-outline", module: "sales.view" },
   {
-    kind: "leaf",
-    label: "Transactions",
-    path: "/transactions",
-    icon: "swap-horizontal-outline",
-    module: "transactions.view",
+    kind: "branch",
+    label: "Water",
+    key: "water",
+    icon: "water-outline",
+    children: [
+      {
+        kind: "leaf",
+        label: "Sales",
+        path: "/sales",
+        icon: "cash-outline",
+        module: "water.sales.view",
+      },
+      {
+        kind: "leaf",
+        label: "POS",
+        path: "/pos",
+        icon: "calculator-outline",
+        module: "water.pos.view",
+      },
+    ],
   },
   {
     kind: "leaf",
@@ -69,18 +82,18 @@ const MENU: MenuNode[] = [
     module: "inventory.view",
   },
   {
-    kind: "leaf",
-    label: "Users",
-    path: "/users",
-    icon: "person-circle-outline",
-    module: "users.view",
-  },
-  {
     kind: "branch",
     label: "Settings",
     key: "settings",
     icon: "settings-outline",
     children: [
+      {
+        kind: "leaf",
+        label: "Users",
+        path: "/users",
+        icon: "person-circle-outline",
+        module: "settings.users.view",
+      },
       {
         kind: "leaf",
         label: "Device",
@@ -123,6 +136,7 @@ function activeRouteFromState(
 export default function DrawerContent(props: DrawerContentComponentProps) {
   const { user, signOut, hasModule } = useAuth();
   const activeTop = activeRouteFromState(props.state);
+  const pathname = usePathname();
 
   const visibleMenu = useMemo(() => {
     return MENU.reduce<MenuNode[]>((acc, node) => {
@@ -154,9 +168,9 @@ export default function DrawerContent(props: DrawerContentComponentProps) {
   }
 
   function isLeafActive(leaf: Leaf): boolean {
-    if (leaf.path === "/") return activeTop === "index";
-    const top = leaf.path.replace(/^\//, "").split("/")[0];
-    return activeTop === top;
+    if (leaf.path === "/") return pathname === "/" || activeTop === "index";
+    if (pathname === leaf.path) return true;
+    return pathname.startsWith(`${leaf.path}/`);
   }
 
   function isBranchActive(branch: Branch): boolean {

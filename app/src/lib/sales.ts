@@ -11,6 +11,8 @@ export interface TxnHeader {
   wth_cuscode: string | null;
   wth_type: TxnType;
   wth_totalamt: number;
+  wth_balanceamt: number;
+  wth_balancestatus: "PD" | "UP";
   wth_payoption: string | null;
   wth_status: string;
   wth_datecreated: string;
@@ -35,21 +37,21 @@ export interface TxnWithDetails {
 
 export async function listTransactions(): Promise<TxnHeader[]> {
   const { transactions } = await api.get<{ transactions: TxnHeader[] }>(
-    "/api/transactions",
+    "/api/sales",
   );
   return transactions;
 }
 
 export async function getTransaction(docno: string): Promise<TxnWithDetails> {
   const { transaction } = await api.get<{ transaction: TxnWithDetails }>(
-    `/api/transactions/${encodeURIComponent(docno)}`,
+    `/api/sales/${encodeURIComponent(docno)}`,
   );
   return transaction;
 }
 
 export async function listPendingPickups(): Promise<TxnHeader[]> {
   const { transactions } = await api.get<{ transactions: TxnHeader[] }>(
-    "/api/transactions/pickups",
+    "/api/sales/pickups",
   );
   return transactions;
 }
@@ -64,7 +66,7 @@ export async function closePickup(
   lines: PickupLineUpdate[],
 ): Promise<TxnHeader> {
   const { transaction } = await api.patch<{ transaction: TxnHeader }>(
-    `/api/transactions/${encodeURIComponent(docno)}/close-pickup`,
+    `/api/sales/${encodeURIComponent(docno)}/close-pickup`,
     { lines },
   );
   return transaction;
@@ -81,7 +83,7 @@ export interface TxnHeaderWithCustomer extends TxnHeader {
 export async function listPendingDeliveries(): Promise<TxnHeaderWithCustomer[]> {
   const { transactions } = await api.get<{
     transactions: TxnHeaderWithCustomer[];
-  }>("/api/transactions/deliveries");
+  }>("/api/sales/deliveries");
   return transactions;
 }
 
@@ -91,7 +93,7 @@ export async function closeDelivery(
 ): Promise<TxnHeaderWithCustomer> {
   const { transaction } = await api.patch<{
     transaction: TxnHeaderWithCustomer;
-  }>(`/api/transactions/${encodeURIComponent(docno)}/close-delivery`, {
+  }>(`/api/sales/${encodeURIComponent(docno)}/close-delivery`, {
     lines,
   });
   return transaction;
@@ -109,6 +111,7 @@ export interface CreateTransactionInput {
   type: TxnType;
   payoption: PayOption | null;
   lines: TxnLineInput[];
+  paylater?: boolean;
 }
 
 export interface CreatedTransaction {
@@ -120,8 +123,35 @@ export async function createTransaction(
   input: CreateTransactionInput,
 ): Promise<CreatedTransaction> {
   const { transaction } = await api.post<{ transaction: CreatedTransaction }>(
-    "/api/transactions",
+    "/api/sales",
     input,
+  );
+  return transaction;
+}
+
+export interface UpdateSaleInput {
+  status?: "C" | "P" | "D";
+  balancestatus?: "PD" | "UP";
+}
+
+export async function updateSale(
+  docno: string,
+  input: UpdateSaleInput,
+): Promise<TxnHeader> {
+  const { transaction } = await api.patch<{ transaction: TxnHeader }>(
+    `/api/sales/${encodeURIComponent(docno)}`,
+    input,
+  );
+  return transaction;
+}
+
+export async function collectSalePayment(
+  docno: string,
+  amount: number,
+): Promise<TxnHeader> {
+  const { transaction } = await api.patch<{ transaction: TxnHeader }>(
+    `/api/sales/${encodeURIComponent(docno)}/collect`,
+    { amount },
   );
   return transaction;
 }

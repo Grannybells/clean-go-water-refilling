@@ -20,4 +20,6 @@ export interface Customer {
   cus_datecreated: string;
   cus_userid: number | null;
   cus_code: string;
+  balance_due: number;
+  cus_type_name: string | null;
 }

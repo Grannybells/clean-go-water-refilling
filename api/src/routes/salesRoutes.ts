@@ -2,12 +2,14 @@ import { Router } from 'express';
 import {
   closeDeliveryHandler,
   closePickupHandler,
+  collectPaymentHandler,
   createTransactionHandler,
   getTransactionHandler,
   listPendingDeliveriesHandler,
   listPendingPickupsHandler,
   listTransactionsHandler,
-} from '../controllers/transactionController';
+  updateSaleHandler,
+} from '../controllers/salesController';
 import { authenticate, requireModule } from '../middleware/auth';
 import { asyncHandler } from '../middleware/asyncHandler';
 
@@ -31,8 +33,18 @@ router.patch(
   requireModule('delivery.view'),
   asyncHandler(closeDeliveryHandler)
 );
-router.get('/', requireModule('transactions.view'), asyncHandler(listTransactionsHandler));
-router.get('/:docno', requireModule('transactions.view'), asyncHandler(getTransactionHandler));
-router.post('/', requireModule('pos.view'), asyncHandler(createTransactionHandler));
+router.get('/', requireModule('water.sales.view'), asyncHandler(listTransactionsHandler));
+router.get(
+  '/:docno',
+  requireModule('water.sales.view'),
+  asyncHandler(getTransactionHandler)
+);
+router.post('/', requireModule('water.pos.create'), asyncHandler(createTransactionHandler));
+router.patch('/:docno', requireModule('water.sales.edit'), asyncHandler(updateSaleHandler));
+router.patch(
+  '/:docno/collect',
+  requireModule('water.sales.edit'),
+  asyncHandler(collectPaymentHandler)
+);
 
 export default router;

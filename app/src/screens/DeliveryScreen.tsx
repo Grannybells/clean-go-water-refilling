@@ -21,7 +21,7 @@ import {
   listPendingDeliveries,
   type TxnDetail,
   type TxnHeaderWithCustomer,
-} from "@/lib/transactions";
+} from "@/lib/sales";
 
 type LineRow = TxnDetail & { pickupInput: string };
 

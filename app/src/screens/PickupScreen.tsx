@@ -21,7 +21,7 @@ import {
   listPendingPickups,
   type TxnDetail,
   type TxnHeader,
-} from "@/lib/transactions";
+} from "@/lib/sales";
 
 type LineRow = TxnDetail & { pickupInput: string };
 

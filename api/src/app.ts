@@ -10,7 +10,7 @@ import branchRoutes from "./routes/branchRoutes";
 import contractRoutes from "./routes/contractRoutes";
 import customerRoutes from "./routes/customerRoutes";
 import productRoutes from "./routes/productRoutes";
-import transactionRoutes from "./routes/transactionRoutes";
+import salesRoutes from "./routes/salesRoutes";
 import moduleRoutes from "./routes/moduleRoutes";
 import moduleGroupRoutes from "./routes/moduleGroupRoutes";
 import settingsRoutes from "./routes/settingsRoutes";
@@ -43,7 +43,7 @@ export const createApp = (): Application => {
   app.use(`${base}/api/contracts`, contractRoutes);
   app.use(`${base}/api/customers`, customerRoutes);
   app.use(`${base}/api/products`, productRoutes);
-  app.use(`${base}/api/transactions`, transactionRoutes);
+  app.use(`${base}/api/sales`, salesRoutes);
   app.use(`${base}/api/modules`, moduleRoutes);
   app.use(`${base}/api/module-groups`, moduleGroupRoutes);
   app.use(`${base}/api/settings/device`, settingsRoutes);

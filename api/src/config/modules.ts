@@ -16,8 +16,9 @@ export const MODULE_CATALOG: ModuleDef[] = [
   { module_name: 'home.view', page: 'home', action: 'view', description: 'View home screen' },
   ...crud('customer', 'customers'),
   ...crud('inventory', 'inventory items'),
-  ...crud('sales', 'sales records'),
-  ...crud('transactions', 'transactions'),
+  // Water-sales area — nested sub-pages
+  ...crud('water.pos', 'POS transactions'),
+  ...crud('water.sales', 'sales history'),
   ...crud('users', 'users'),
   // Settings area — nested sub-pages
   ...crud('settings.device', 'device settings'),
@@ -34,15 +35,15 @@ export const DEFAULT_GROUPS: Record<string, string[]> = {
     'home.view',
     'customer.view',
     'inventory.view',
-    'sales.view',
-    'transactions.view',
+    'water.pos.view',
+    'water.sales.view',
   ],
   admin_defaults: [
     'home.view',
     'customer.view',
     'inventory.view',
-    'sales.view',
-    'transactions.view',
+    'water.pos.view',
+    'water.sales.view',
     // Device settings
     'settings.device.view',
     'settings.device.create',

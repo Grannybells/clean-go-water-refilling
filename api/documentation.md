@@ -72,7 +72,10 @@ npm run db:init           # create database + tables (idempotent)
 npm run seed:modules      # module catalog + default role groups
 npm run seed:users        # creates 8 sample users (see roster below)
 npm run seed:branches     # 4 sample branches
+npm run seed:customers    # 20 sample customers (requires customer_type rows + branches)
 ```
+
+> `seed:customers` is **not** part of `db:reset` because it depends on the legacy `customer_type` table being pre-populated — run it manually once you have at least one customer type.
 
 Each seed is idempotent — re-running them skips rows that already exist. `seed:modules` is slightly different: it **upserts** the catalog, **clears and rewrites** the four default groups, and **backfills** existing users into their role's group.
 
@@ -398,7 +401,7 @@ Returns one user with their role and a full permissions breakdown. Requires auth
   "modules": {
     "effective": ["home.view", "customer.view", "inventory.view"],
     "direct": [
-      { "id": 12, "module_name": "sales.view", "granted_by": 1, "created_at": "2026-11-05T..." }
+      { "id": 12, "module_name": "water.sales.view", "granted_by": 1, "created_at": "2026-11-05T..." }
     ],
     "groups": [
       {
@@ -465,7 +468,7 @@ Grant one module to a user directly (independent of any group).
 
 **Body**
 ```json
-{ "module_name": "sales.view" }
+{ "module_name": "water.sales.view" }
 ```
 
 - `module_name` must exist in the `modules` catalog
@@ -608,7 +611,7 @@ List every group with its modules and current user count.
 {
   "groups": [
     { "group_name": "admin_defaults",   "modules": ["customer.view", "..."], "user_count": 1, "is_reserved": true  },
-    { "group_name": "cashier_bundle",   "modules": ["sales.view", "sales.create"], "user_count": 3, "is_reserved": false }
+    { "group_name": "cashier_bundle",   "modules": ["water.sales.view", "water.pos.view"], "user_count": 3, "is_reserved": false }
   ]
 }
 ```
@@ -623,7 +626,7 @@ One group, including its modules and user count.
 {
   "group": {
     "group_name": "cashier_bundle",
-    "modules": ["sales.view", "sales.create", "transactions.view"],
+    "modules": ["water.sales.view", "water.pos.view", "water.pos.create"],
     "user_count": 3,
     "is_reserved": false,
     "description": "Cashier bundle for POS staff",
@@ -643,7 +646,7 @@ Create a new custom group.
 ```json
 {
   "group_name": "cashier_bundle",
-  "modules": ["sales.view", "sales.create", "transactions.view"],
+  "modules": ["water.sales.view", "water.pos.view", "water.pos.create"],
   "description": "Cashier bundle for POS staff"
 }
 ```
@@ -910,6 +913,405 @@ Hard delete. Returns **204**. **404** if not found.
 
 ---
 
+## Customers
+
+Customer records live in the legacy `CustomerInfo` table (not created by `ensureSchema` — it's assumed to pre-exist along with `customer_type`). All routes are **module-gated**:
+
+| Method | Path | Required module |
+|--------|------|-----------------|
+| GET    | `/api/customers/type` | `customer.view` |
+| GET    | `/api/customers`      | `customer.view` |
+| POST   | `/api/customers`      | `customer.create` |
+| PATCH  | `/api/customers/:cus_refno` | `customer.edit` |
+
+**Branch scoping.** `GET /api/customers` filters by the caller's active contract's `branch_id` (`cus_branch`) for every non-owner role. Owner sees all branches. A non-owner without an active contract gets an empty list (not a 403).
+
+### `GET /api/customers/type`
+Lists the available customer types from `customer_type`. Used by the create-customer form to populate the "Customer type" picker.
+
+**200**
+```json
+{
+  "types": [
+    {
+      "id": 1,
+      "customer_refno": "RES",
+      "type": "Residential",
+      "description": "Household account",
+      "created_by": 1,
+      "created_at": "2026-11-05T..."
+    }
+  ]
+}
+```
+
+---
+
+### `GET /api/customers`
+List customers, newest first. Auto-scoped to the caller's branch (see **Branch scoping** above).
+
+**200**
+```json
+{
+  "customers": [
+    {
+      "cus_refno": 42,
+      "cus_name": "Juan Dela Cruz",
+      "cus_address": "123 Rizal St, Manila",
+      "cus_contactno": "+63 912 345 6789",
+      "cus_email": "juan.delacruz@example.com",
+      "cus_birthdate": "1988-03-14",
+      "cus_joindate": "2026-11-05",
+      "cus_type": "RES",
+      "cus_branch": "ALPHA",
+      "cus_datecreated": "2026-11-05T...",
+      "cus_userid": 1,
+      "cus_code": "RES26110001"
+    }
+  ]
+}
+```
+
+---
+
+### `POST /api/customers`
+Creates a customer. The server generates `cus_code` as `<customer_refno><YY><MM><4-digit seq>` (e.g. `RES26110001`) by scanning the highest existing code that shares the same prefix.
+
+**Body**
+```json
+{
+  "cus_name": "Juan Dela Cruz",
+  "cus_address": "123 Rizal St, Manila",
+  "cus_contactno": "+63 912 345 6789",
+  "cus_email": "juan.delacruz@example.com",
+  "cus_birthdate": "1988-03-14",
+  "cus_type": "RES",
+  "cus_branch": "ALPHA"
+}
+```
+
+Required: `cus_name`, `cus_type` (must match a `customer_refno` in `customer_type`).
+Optional: `cus_address`, `cus_contactno`, `cus_email`, `cus_birthdate` (`YYYY-MM-DD`), `cus_branch` (if provided, must match an existing `branches.branch_id`).
+
+`cus_userid` is set from the caller's token; `cus_joindate` is set to today (UTC).
+
+**201** → `{ "customer": { ...full row... } }`
+
+**Errors:** `400` missing required field / bad `cus_birthdate` format · `401` · `403` missing `customer.create` · `404` unknown `cus_type` or `cus_branch`
+
+---
+
+### `PATCH /api/customers/:cus_refno`
+Partial update of one customer. Only fields present in the body are changed.
+
+**Body (any subset)**
+```json
+{
+  "cus_name": "Juan P. Dela Cruz",
+  "cus_address": "Updated address",
+  "cus_contactno": "+63 912 000 0000",
+  "cus_email": "juan@new.example.com",
+  "cus_birthdate": "1988-03-14",
+  "cus_joindate": "2026-11-05",
+  "cus_type": "COM"
+}
+```
+
+`cus_branch`, `cus_code`, and `cus_userid` cannot be changed through this endpoint. If `cus_type` is provided it must match a `customer_refno` in `customer_type`.
+
+**200** → `{ "customer": { ...updated row... } }`
+
+**Errors:** `400` non-integer `cus_refno` / no valid fields / bad date format · `401` · `403` missing `customer.edit` · `404` customer not found or unknown `cus_type`
+
+---
+
+## Products
+
+Read-only catalog endpoints backed by the legacy `pdtitem_water` table (not managed by `ensureSchema`).
+
+### `GET /api/products/water`
+Required module: **`water.pos.view`**.
+
+**200**
+```json
+{
+  "products": [
+    {
+      "wr_refno": 1,
+      "wr_desc": "Round Gallon 5 Gal",
+      "wr_pup_uprice": 25.00,
+      "wr_del_uprice": 30.00,
+      "wr_vol_minqty": 10,
+      "wr_vol_pup_uprice": 22.00,
+      "wr_vol_del_uprice": 28.00,
+      "wr_code": "RG5",
+      "wr_conttype": "ROUND"
+    }
+  ]
+}
+```
+
+- `wr_pup_uprice` / `wr_del_uprice` — regular pickup / delivery unit price.
+- `wr_vol_minqty` / `wr_vol_pup_uprice` / `wr_vol_del_uprice` — optional volume-break threshold and prices (all nullable; a product without volume pricing leaves these `null`).
+
+**Errors:** `401` · `403` missing `water.pos.view`
+
+---
+
+## Sales
+
+POS, pickup and delivery flow. Backed by the legacy `water_tranheader` / `water_trandetails` tables (not managed by `ensureSchema`). Mounted at `/api/sales` — the internal URL moved from `/api/transactions` so it matches the "Sales" screen in the client.
+
+A transaction is one of three types (`wth_type`):
+
+| type | meaning | starting `wth_status` |
+|------|---------|-----------------------|
+| `WI` | Walk-in sale   | `C` (closed) |
+| `PU` | Pickup order   | `P` (pending — closes when customer picks up) |
+| `DL` | Delivery order | `P` (pending — closes when the rider completes delivery) |
+
+**Two orthogonal status columns:**
+
+- `wth_status` — fulfillment state only: `C` closed · `P` pending · `D` delivered.
+- `wth_balancestatus` — payment state only: `PD` paid · `UP` unpaid.
+
+This keeps a closed-but-unpaid pickup representable (`wth_status='C'` + `wth_balancestatus='UP'`) without losing either fact.
+
+Payment options (`wth_payoption`): `CS` cash · `QR` QR · `GC` GCash · `CR` credit. Required for `WI` (unless `paylater=true`), optional for `PU` / `DL`.
+
+**Pay-later / balance tracking.** `wth_totalamt` always stores the full sale amount; `wth_balanceamt` tracks what's still owed. For a normal transaction `wth_balanceamt = 0` and `wth_balancestatus = 'PD'`. When `paylater: true`:
+
+- `wth_balanceamt = wth_totalamt`, `wth_balancestatus = 'UP'`, `wth_payoption` is forced to `'CR'`.
+- `wth_status` follows fulfillment only (`WI`→`C`, `PU`/`DL`→`P`) — it does **not** change based on payment.
+- `close-pickup` / `close-delivery` set `wth_status` to `C` / `D` as usual; `wth_balancestatus` is untouched (still `UP` until a collection updates it).
+
+Collections later decrement `wth_balanceamt` toward 0 and flip `wth_balancestatus` to `PD`.
+
+**Branch scoping.** All list endpoints auto-filter by the caller's active contract `branch_id` (owner sees all). Single-transaction endpoints return **403** if the caller is not owner and the row's `wth_stncode` doesn't match their contract branch.
+
+**Module tokens used.** `water.pos.*` and `water.sales.*` are in `MODULE_CATALOG` and seeded into `operator_defaults` / `admin_defaults` (view only). `pickup.view` / `delivery.view` are **not** in the catalog yet — only owner can reach the pickup/delivery endpoints today (via the `*` bypass). Add them to `src/config/modules.ts` when pickup/delivery get their own token namespace.
+
+| Method | Path | Required module |
+|--------|------|-----------------|
+| GET    | `/api/sales`                      | `water.sales.view` |
+| GET    | `/api/sales/:docno`               | `water.sales.view` |
+| POST   | `/api/sales`                      | `water.pos.create` |
+| PATCH  | `/api/sales/:docno`               | `water.sales.edit` |
+| PATCH  | `/api/sales/:docno/collect`       | `water.sales.edit` |
+| GET    | `/api/sales/pickups`              | `pickup.view` |
+| PATCH  | `/api/sales/:docno/close-pickup`  | `pickup.view` |
+| GET    | `/api/sales/deliveries`           | `delivery.view` |
+| PATCH  | `/api/sales/:docno/close-delivery`| `delivery.view` |
+
+### `GET /api/sales`
+List all transaction headers (not line items), newest first. Branch-scoped.
+
+**200**
+```json
+{
+  "transactions": [
+    {
+      "wth_refno": 101,
+      "wth_stncode": "ALPHA",
+      "wth_docno": "261100000001",
+      "wth_date": "2026-11-05",
+      "wth_cuscode": "RES26110001",
+      "wth_type": "WI",
+      "wth_totalamt": 75.00,
+      "wth_payoption": "CS",
+      "wth_status": "C",
+      "wth_datecreated": "2026-11-05T...",
+      "wth_userid": "1"
+    }
+  ]
+}
+```
+
+---
+
+### `GET /api/sales/:docno`
+Returns one transaction's header + all its detail lines.
+
+**200**
+```json
+{
+  "transaction": {
+    "header": {
+      "wth_refno": 101,
+      "wth_stncode": "ALPHA",
+      "wth_docno": "261100000001",
+      "wth_date": "2026-11-05",
+      "wth_cuscode": "RES26110001",
+      "wth_type": "WI",
+      "wth_totalamt": 75.00,
+      "wth_payoption": "CS",
+      "wth_status": "C",
+      "wth_datecreated": "2026-11-05T...",
+      "wth_userid": "1"
+    },
+    "details": [
+      {
+        "wtd_refno": 201,
+        "wtd_stncode": "ALPHA",
+        "wtd_docno": "261100000001",
+        "wtd_seqno": 1,
+        "wtd_itemcode": "RG5",
+        "wtd_qty": 3,
+        "wtd_uprice": 25.00,
+        "wtd_amount": 75.00
+      }
+    ]
+  }
+}
+```
+
+**Errors:** `401` · `403` cross-branch read · `404` docno not found
+
+---
+
+### `POST /api/sales`
+Create a new transaction. Header + detail lines are written atomically; the server computes `wth_totalamt` from the lines (ignoring any client-supplied total) and generates `wth_docno` as `<YY><MM><8-digit seq>` (e.g. `261100000001`).
+
+**Body**
+```json
+{
+  "stncode": "ALPHA",
+  "cuscode": "RES26110001",
+  "type": "WI",
+  "payoption": "CS",
+  "paylater": false,
+  "lines": [
+    { "wr_code": "RG5", "qty": 3, "uprice": 25.00 }
+  ]
+}
+```
+
+Rules:
+- `type` — required, must be `WI` / `PU` / `DL`.
+- `payoption` — required for `WI` (unless `paylater=true`); optional for `PU` / `DL`. Must be `CS` / `QR` / `GC` / `CR` if present.
+- `cuscode` — required for `PU`, `DL`, and any `paylater=true` request (needs someone to charge); optional for cash walk-ins.
+- `paylater` — optional boolean. If `true`, must carry `cuscode`. Server overrides `payoption` to `'CR'`, writes `wth_balanceamt = totalamt`, and sets `wth_balancestatus = 'UP'`. `wth_status` still follows fulfillment only (`WI`→`C`, `PU`/`DL`→`P`).
+- `stncode` — branch code, optional (nullable in DB).
+- `lines` — non-empty array. Each line needs string `wr_code`, positive integer `qty`, non-negative numeric `uprice`.
+
+Status auto-set: `WI` → `C` (closed), `PU` / `DL` → `P` (pending — close later via the close endpoints below).
+
+**201**
+```json
+{ "transaction": { "wth_refno": 101, "wth_docno": "261100000001" } }
+```
+
+**Errors:** `400` wrong/missing `type`, `payoption`, `cuscode`, or `lines` validation · `401` · `403` missing `water.pos.create`
+
+> **Concurrency note.** `nextDocNo` reads the current max `wth_docno` for the YYMM prefix and increments. Two sales inserted inside the same millisecond can collide — add a unique index on `wth_docno` and retry on duplicate-key if you expect heavy concurrency.
+
+---
+
+### `GET /api/sales/pickups`
+List pending pickup orders (`wth_type='PU' AND wth_status='P'`), newest first. Branch-scoped.
+
+**200** → same shape as `GET /api/sales`.
+
+---
+
+### `PATCH /api/sales/:docno`
+Generic in-place update for a sale. Supports status transitions (`P` → `C`/`D`) and payment collection (`UP` → `PD`). Non-owners with a mismatched branch get **403**.
+
+**Body** (at least one field required)
+```json
+{ "status": "D", "balancestatus": "PD" }
+```
+
+- `status` — optional. Must be `C` / `P` / `D`.
+- `balancestatus` — optional. Must be `PD` / `UP`. Setting to `PD` also zeroes `wth_balanceamt` in the same UPDATE.
+
+**200** → `{ "transaction": { ...refreshed header... } }` · **400** if nothing valid to update · **404** if docno not found.
+
+---
+
+### `PATCH /api/sales/:docno/collect`
+Record a payment against an outstanding balance. Supports **partial payment** — the row stays `UP` until the balance hits zero, at which point it auto-flips to `PD`. The read-check-write is wrapped in a transaction with `UPDLOCK, HOLDLOCK` so concurrent collectors can't double-decrement.
+
+**Body**
+```json
+{ "amount": 50.00 }
+```
+
+- `amount` — required positive number. Server rounds to 2 decimals.
+- Must not exceed the current `wth_balanceamt` (returns **400** with the current balance in the message if it does).
+- Returns **409** if the row is already fully paid (`wth_balancestatus='PD'` or `wth_balanceamt<=0`).
+
+**200**
+```json
+{
+  "transaction": { ...refreshed header... },
+  "collected": 50.00
+}
+```
+
+**Errors:** `400` non-positive / overpay · `401` · `403` cross-branch / missing `water.sales.edit` · `404` docno not found · `409` already paid.
+
+---
+
+### `PATCH /api/sales/:docno/close-pickup`
+Close a pending pickup: flips header `wth_status` to `C` and optionally stamps per-line `wtd_qtypickup`. Non-owners with a mismatched branch get **403**. If the header isn't a pending pickup, **400**.
+
+**Body**
+```json
+{
+  "lines": [
+    { "seqno": 1, "qtypickup": 3 },
+    { "seqno": 2, "qtypickup": null }
+  ]
+}
+```
+
+- `seqno` — must match a `wtd_seqno` row for the given `wth_docno`. Non-integer or `≤ 0` entries are silently skipped.
+- `qtypickup` — non-negative integer for the actual quantity picked up. `null` / missing / empty-string leaves the existing `wtd_qtypickup` untouched. Decimals are floored.
+- `lines` may be empty / omitted — the header still closes.
+
+**200** → `{ "transaction": { ...refreshed header... } }` · **409** `Transaction was already closed` (lost the race)
+
+---
+
+### `GET /api/sales/deliveries`
+List pending deliveries (`wth_type='DL' AND wth_status='P'`), newest first. Branch-scoped. Response rows are joined with `CustomerInfo` so each header carries `customer_refno`, `customer_name`, `customer_address`, `customer_contactno`, `customer_email` for the dispatch screen.
+
+**200**
+```json
+{
+  "transactions": [
+    {
+      "wth_refno": 102,
+      "wth_stncode": "ALPHA",
+      "wth_docno": "261100000002",
+      "wth_date": "2026-11-05",
+      "wth_cuscode": "RES26110001",
+      "wth_type": "DL",
+      "wth_totalamt": 90.00,
+      "wth_payoption": null,
+      "wth_status": "P",
+      "wth_datecreated": "2026-11-05T...",
+      "wth_userid": "1",
+      "customer_refno": 42,
+      "customer_name": "Juan Dela Cruz",
+      "customer_address": "123 Rizal St, Manila",
+      "customer_contactno": "+63 912 345 6789",
+      "customer_email": "juan.delacruz@example.com"
+    }
+  ]
+}
+```
+
+---
+
+### `PATCH /api/sales/:docno/close-delivery`
+Close a pending delivery: flips header `wth_status` to `D` (delivered) and optionally stamps per-line `wtd_qtypickup`. Same body shape, branch check, and error codes as `/close-pickup`.
+
+**200** → `{ "transaction": { ...refreshed delivery header, joined with customer... } }`
+
+---
+
 ## Settings
 
 Settings is a **container page** with four sub-features, each with its own URL and token namespace:
@@ -1095,8 +1497,8 @@ Seeded modules (via `npm run seed:modules`):
 | home                  | view                              |
 | customer              | view, create, edit, delete        |
 | inventory             | view, create, edit, delete        |
-| sales                 | view, create, edit, delete        |
-| transactions          | view, create, edit, delete        |
+| water.pos      | view, create, edit, delete        |
+| water.sales    | view, create, edit, delete        |
 | users                 | view, create, edit, delete        |
 | settings.device       | view, create, edit, delete        |
 | settings.branches     | view, create, edit, delete        |
@@ -1105,7 +1507,7 @@ Seeded modules (via `npm run seed:modules`):
 
 Settings is a container page with four sub-features; each gets its own token namespace. Wildcards cascade: `settings.*` grants everything under Settings, `settings.branches.*` grants every action on Branches, etc.
 
-Module names are `page.action` strings, e.g. `customer.view`, `sales.edit`.
+Module names are `page.action` strings, e.g. `customer.view`, `water.sales.edit`.
 
 ### Default role groups
 Each role is linked to a group in `module_groups`. When `POST /api/users` creates a user, they are automatically added to their role's group — no manual permission setup needed. `npm run seed:modules` also **backfills existing users** into their role's group, so running it on an existing DB is safe.
@@ -1113,7 +1515,7 @@ Each role is linked to a group in `module_groups`. When `POST /api/users` create
 | group              | modules                                                                                            |
 |--------------------|----------------------------------------------------------------------------------------------------|
 | `staff_defaults`   | `home.view`, `customer.view`, `inventory.view`                                                     |
-| `operator_defaults`| staff + `sales.view`, `transactions.view`                                                          |
+| `operator_defaults`| staff + `water.pos.view`, `water.sales.view`                                         |
 | `admin_defaults`   | operator + `settings.device.*` + `settings.branches.*` (no groups/modules — those stay owner-only) |
 | `owner_defaults`   | every module in the catalog, enumerated explicitly (25 modules at time of writing)                 |
 
@@ -1212,7 +1614,11 @@ WHERE umg.user_id = ?;
 
 ## Not yet implemented
 
-- Mobile-app page endpoints: customer, inventory, sales, transactions CRUD (tables don't exist yet). Settings CRUD is done.
+- Customer `DELETE /api/customers/:cus_refno` (list/create/update are done; no delete yet).
+- Inventory and sales CRUD (tables don't exist yet). Customers, products (read-only), transactions, and settings are done.
+- Product mutation (`POST/PATCH/DELETE /api/products/water`) — currently read-only.
+- Transaction edit / void endpoint (only close-pickup / close-delivery exist today).
+- Catalog entries for `pickup.view`, `delivery.view` — the pickup/delivery routes gate on these but they aren't in `MODULE_CATALOG`, so only owner can reach them. Add them to `src/config/modules.ts` + `admin_defaults` / `operator_defaults` and re-run `npm run seed:modules`.
 - Email change endpoint (currently not updatable via `PATCH /api/users/:id`)
 - User deactivation / deletion
 - Password change (`PATCH /api/users/me/password`) + admin reset (`PATCH /api/users/:id/password`)

@@ -1,14 +1,10 @@
 import RequireModule from "@/components/RequireModule";
-import PlaceholderScreen from "@/screens/PlaceholderScreen";
+import SalesScreen from "@/screens/SalesScreen";
 
 export default function Sales() {
   return (
-    <RequireModule module="sales.view">
-      <PlaceholderScreen
-        title="Sales"
-        description="Record new sales and review daily totals. Coming soon."
-        icon="cash-outline"
-      />
+    <RequireModule module="water.sales.view">
+      <SalesScreen />
     </RequireModule>
   );
 }

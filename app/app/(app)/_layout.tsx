@@ -25,7 +25,6 @@ export default function AppLayout() {
       <Drawer.Screen name="delivery" options={{ title: "Deliveries" }} />
       <Drawer.Screen name="customer" options={{ title: "Customers" }} />
       <Drawer.Screen name="sales" options={{ title: "Sales" }} />
-      <Drawer.Screen name="transactions" options={{ title: "Transactions" }} />
       <Drawer.Screen name="inventory" options={{ title: "Inventory" }} />
       <Drawer.Screen name="users" options={{ title: "Users" }} />
       <Drawer.Screen name="settings" options={{ title: "Settings" }} />

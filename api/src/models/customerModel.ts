@@ -22,7 +22,23 @@ export interface Customer {
   cus_datecreated: Date;
   cus_userid: number | null;
   cus_code: string;
+  balance_due: number;
+  cus_type_name: string | null;
 }
+
+const CUSTOMER_SELECT = `
+  SELECT c.*,
+         t.type AS cus_type_name,
+         COALESCE(b.balance_due, 0) AS balance_due
+    FROM CustomerInfo c
+    LEFT JOIN customer_type t ON t.customer_refno = c.cus_type
+    LEFT JOIN (
+      SELECT wth_cuscode, SUM(wth_balanceamt) AS balance_due
+        FROM water_tranheader
+       WHERE wth_balancestatus = 'UP' AND wth_cuscode IS NOT NULL
+       GROUP BY wth_cuscode
+    ) b ON b.wth_cuscode = c.cus_code
+`;
 
 export interface CreateCustomerInput {
   cus_name: string;
@@ -59,7 +75,7 @@ export const customerTypeRefnoExists = async (refno: string): Promise<boolean> =
 
 export const findCustomerByRefno = async (cusRefno: number): Promise<Customer | null> => {
   const [rows] = await pool.query<RowDataPacket>(
-    'SELECT TOP 1 * FROM CustomerInfo WHERE cus_refno = ?',
+    `${CUSTOMER_SELECT} WHERE c.cus_refno = ?`,
     [cusRefno]
   );
   return (rows[0] as Customer) ?? null;
@@ -70,13 +86,13 @@ export const listCustomers = async (
 ): Promise<Customer[]> => {
   if (branchId) {
     const [rows] = await pool.query<RowDataPacket>(
-      'SELECT * FROM CustomerInfo WHERE cus_branch = ? ORDER BY cus_datecreated DESC',
+      `${CUSTOMER_SELECT} WHERE c.cus_branch = ? ORDER BY c.cus_datecreated DESC`,
       [branchId]
     );
     return rows as Customer[];
   }
   const [rows] = await pool.query<RowDataPacket>(
-    'SELECT * FROM CustomerInfo ORDER BY cus_datecreated DESC'
+    `${CUSTOMER_SELECT} ORDER BY c.cus_datecreated DESC`
   );
   return rows as Customer[];
 };

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import {
   closeDeliveryTransaction,
   closePickupTransaction,
+  collectPayment,
   createTransaction,
   findDeliveryByDocno,
   findTransactionByDocno,
@@ -9,12 +10,19 @@ import {
   listPendingPickups,
   listTransactionDetails,
   listTransactions,
+  updateSale,
+  type BalanceStatus,
   type CreateTxnInput,
   type PayOption,
   type PickupLineUpdate,
   type TxnLineInput,
   type TxnType,
-} from '../models/transactionModel';
+  type UpdateSaleInput,
+  type WthStatus,
+} from '../models/salesModel';
+
+const VALID_STATUSES: WthStatus[] = ['C', 'P', 'D'];
+const VALID_BAL_STATUSES: BalanceStatus[] = ['PD', 'UP'];
 
 const VALID_TYPES: TxnType[] = ['WI', 'PU', 'DL'];
 
@@ -216,12 +224,14 @@ export const createTransactionHandler = async (
     type?: unknown;
     payoption?: unknown;
     lines?: unknown;
+    paylater?: unknown;
   };
 
   if (!VALID_TYPES.includes(body.type as TxnType)) {
     res.status(400).json({ message: `type must be one of ${VALID_TYPES.join(', ')}` });
     return;
   }
+  const paylater = body.paylater === true;
   const hasPay = body.payoption !== null && body.payoption !== undefined;
   if (hasPay && !VALID_PAYMENTS.includes(body.payoption as PayOption)) {
     res.status(400).json({
@@ -229,7 +239,7 @@ export const createTransactionHandler = async (
     });
     return;
   }
-  if (body.type === 'WI' && !hasPay) {
+  if (body.type === 'WI' && !paylater && !hasPay) {
     res.status(400).json({
       message: 'payoption is required for walk-in transactions',
     });
@@ -241,6 +251,12 @@ export const createTransactionHandler = async (
   if ((body.type === 'PU' || body.type === 'DL') && !cuscode) {
     res.status(400).json({
       message: 'cuscode (selected customer) is required for pickup and delivery',
+    });
+    return;
+  }
+  if (paylater && !cuscode) {
+    res.status(400).json({
+      message: 'cuscode (selected customer) is required for pay-later transactions',
     });
     return;
   }
@@ -281,8 +297,120 @@ export const createTransactionHandler = async (
     totalamt,
     userid: req.user.id,
     lines,
+    paylater,
   };
 
   const created = await createTransaction(input);
   res.status(201).json({ transaction: created });
+};
+
+export const updateSaleHandler = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  if (!req.user) {
+    res.status(401).json({ message: 'Unauthorized' });
+    return;
+  }
+  const docno = req.params.docno;
+  const existing = await findTransactionByDocno(docno);
+  if (!existing) {
+    res.status(404).json({ message: 'Transaction not found' });
+    return;
+  }
+  if (
+    req.user.role !== 'owner' &&
+    existing.wth_stncode &&
+    req.user.contract?.branch_id !== existing.wth_stncode
+  ) {
+    res.status(403).json({ message: 'Forbidden: other branch' });
+    return;
+  }
+
+  const body = (req.body ?? {}) as {
+    status?: unknown;
+    balancestatus?: unknown;
+  };
+  const update: UpdateSaleInput = {};
+  if (body.status !== undefined) {
+    if (!VALID_STATUSES.includes(body.status as WthStatus)) {
+      res.status(400).json({
+        message: `status must be one of ${VALID_STATUSES.join(', ')}`,
+      });
+      return;
+    }
+    update.status = body.status as WthStatus;
+  }
+  if (body.balancestatus !== undefined) {
+    if (!VALID_BAL_STATUSES.includes(body.balancestatus as BalanceStatus)) {
+      res.status(400).json({
+        message: `balancestatus must be one of ${VALID_BAL_STATUSES.join(', ')}`,
+      });
+      return;
+    }
+    update.balancestatus = body.balancestatus as BalanceStatus;
+  }
+  if (!update.status && !update.balancestatus) {
+    res.status(400).json({ message: 'No valid fields to update' });
+    return;
+  }
+
+  const affected = await updateSale(docno, update);
+  if (affected === 0) {
+    res.status(404).json({ message: 'Transaction not found' });
+    return;
+  }
+  const refreshed = await findTransactionByDocno(docno);
+  res.json({ transaction: refreshed });
+};
+
+export const collectPaymentHandler = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  if (!req.user) {
+    res.status(401).json({ message: 'Unauthorized' });
+    return;
+  }
+  const docno = req.params.docno;
+  const existing = await findTransactionByDocno(docno);
+  if (!existing) {
+    res.status(404).json({ message: 'Transaction not found' });
+    return;
+  }
+  if (
+    req.user.role !== 'owner' &&
+    existing.wth_stncode &&
+    req.user.contract?.branch_id !== existing.wth_stncode
+  ) {
+    res.status(403).json({ message: 'Forbidden: other branch' });
+    return;
+  }
+
+  const raw = (req.body ?? {}) as { amount?: unknown };
+  const amount = Number(raw.amount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    res.status(400).json({ message: 'amount must be a positive number' });
+    return;
+  }
+  const rounded = Number(amount.toFixed(2));
+
+  const result = await collectPayment(docno, rounded);
+  if (!result.ok) {
+    if (result.reason === 'not_found') {
+      res.status(404).json({ message: 'Transaction not found' });
+      return;
+    }
+    if (result.reason === 'already_paid') {
+      res.status(409).json({ message: 'Transaction is already fully paid' });
+      return;
+    }
+    res.status(400).json({
+      message: `amount exceeds outstanding balance (${result.currentBalance ?? 0})`,
+    });
+    return;
+  }
+
+  const refreshed = await findTransactionByDocno(docno);
+  res.json({ transaction: refreshed, collected: rounded });
 };

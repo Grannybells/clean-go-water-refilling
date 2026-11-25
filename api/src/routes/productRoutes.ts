@@ -7,6 +7,6 @@ const router = Router();
 
 router.use(authenticate);
 
-router.get('/water', requireModule('pos.view'), asyncHandler(listWaterProductsHandler));
+router.get('/water', requireModule('water.pos.view'), asyncHandler(listWaterProductsHandler));
 
 export default router;

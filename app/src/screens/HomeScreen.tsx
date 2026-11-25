@@ -18,7 +18,7 @@ import { ApiError } from "@/lib/api";
 import { listCustomers } from "@/lib/customers";
 import { formatPeso, listWaterProducts, unitPriceFor } from "@/lib/products";
 import { getCachedSettings } from "@/lib/settings";
-import { createTransaction } from "@/lib/transactions";
+import { createTransaction } from "@/lib/sales";
 import type { Customer } from "@/types/customer";
 import type { CartLine, Fulfillment, WaterProduct } from "@/types/product";
 import type { Settings } from "@/types/settings";
@@ -52,6 +52,7 @@ export default function HomeScreen() {
   const [payment, setPayment] = useState<"cash" | "qr" | "gcash" | "credit" | null>(
     null,
   );
+  const [payLater, setPayLater] = useState(false);
   const [tendered, setTendered] = useState("");
   const [qtyProduct, setQtyProduct] = useState<WaterProduct | null>(null);
   const [qtyInput, setQtyInput] = useState("");
@@ -62,6 +63,7 @@ export default function HomeScreen() {
     customer: Customer | null;
     mode: Fulfillment;
     payment: "cash" | "qr" | "gcash" | "credit" | null;
+    payLater: boolean;
     tendered: number;
     change: number;
     lines: Array<{ product: WaterProduct; qty: number; unit: number }>;
@@ -126,6 +128,7 @@ export default function HomeScreen() {
 
   function openCheckout() {
     setPayment(null);
+    setPayLater(false);
     setTendered("");
     setSubmitError(null);
     setCheckoutOpen(true);
@@ -144,7 +147,8 @@ export default function HomeScreen() {
   };
 
   async function submitTransaction() {
-    if (!canConfirm || !payment) return;
+    if (!canConfirm) return;
+    if (!payLater && !payment) return;
     setSubmitting(true);
     setSubmitError(null);
     const snapshotLines = lines.map((l) => ({
@@ -157,7 +161,8 @@ export default function HomeScreen() {
         stncode: deviceSettings?.branch_id ?? null,
         cuscode: customer?.cus_code ?? null,
         type: TYPE_MAP[mode],
-        payoption: PAY_MAP[payment],
+        payoption: payLater ? "CR" : payment ? PAY_MAP[payment] : null,
+        paylater: payLater,
         lines: snapshotLines.map((l) => ({
           wr_code: l.product.wr_code,
           qty: l.qty,
@@ -169,9 +174,10 @@ export default function HomeScreen() {
         at: new Date(),
         customer,
         mode,
-        payment,
-        tendered: payment === "cash" ? tenderedNum : totals.subtotal,
-        change: payment === "cash" ? Math.max(0, change) : 0,
+        payment: payLater ? "credit" : payment,
+        payLater,
+        tendered: payLater ? 0 : payment === "cash" ? tenderedNum : totals.subtotal,
+        change: !payLater && payment === "cash" ? Math.max(0, change) : 0,
         lines: snapshotLines,
         subtotal: totals.subtotal,
         itemCount: totals.itemCount,
@@ -297,12 +303,14 @@ export default function HomeScreen() {
 
   const tenderedNum = Number(tendered.replace(/,/g, "")) || 0;
   const change = tenderedNum - totals.subtotal;
-  const needsCustomer = mode !== "walkin";
+  const needsCustomer = mode !== "walkin" || payLater;
   const canConfirm =
     lines.length > 0 &&
-    payment !== null &&
-    (payment !== "cash" || tenderedNum >= totals.subtotal) &&
-    (!needsCustomer || customer !== null);
+    (!needsCustomer || customer !== null) &&
+    (payLater
+      ? true
+      : payment !== null &&
+        (payment !== "cash" || tenderedNum >= totals.subtotal));
 
   if (loading) {
     return (
@@ -795,16 +803,64 @@ export default function HomeScreen() {
                   Customer required
                 </Text>
                 <Text className="mt-0.5 text-[11px] text-amber-800">
-                  {mode === "pickup"
-                    ? "Select a customer before confirming a pickup."
-                    : "Select a customer before confirming a delivery."}
+                  {payLater
+                    ? "Select a customer to charge this order to."
+                    : mode === "pickup"
+                      ? "Select a customer before confirming a pickup."
+                      : "Select a customer before confirming a delivery."}
                 </Text>
               </View>
             ) : null}
 
-            <Text className="mb-1 mt-4 text-sm font-medium text-slate-700">
-              Payment method
-            </Text>
+            <Pressable
+                onPress={() => {
+                  setPayLater((v) => {
+                    const next = !v;
+                    if (next) setPayment(null);
+                    return next;
+                  });
+                }}
+                className={`mt-4 flex-row items-center justify-between rounded-xl border px-3 py-2.5 ${
+                  payLater
+                    ? "border-amber-300 bg-amber-50"
+                    : "border-slate-200 bg-white active:bg-slate-50"
+                }`}
+              >
+                <View className="flex-1 pr-3">
+                  <Text
+                    className={`text-sm font-semibold ${
+                      payLater ? "text-amber-800" : "text-slate-800"
+                    }`}
+                  >
+                    Pay Later
+                  </Text>
+                  <Text
+                    className={`text-[11px] ${
+                      payLater ? "text-amber-700" : "text-slate-500"
+                    }`}
+                  >
+                    Charge the full amount to the customer's account.
+                  </Text>
+                </View>
+                <View
+                  className={`h-6 w-11 justify-center rounded-full px-0.5 ${
+                    payLater ? "bg-amber-500" : "bg-slate-300"
+                  }`}
+                >
+                  <View
+                    className={`h-5 w-5 rounded-full bg-white ${
+                      payLater ? "self-end" : "self-start"
+                    }`}
+                  />
+                </View>
+              </Pressable>
+
+            {!payLater ? (
+              <Text className="mb-1 mt-4 text-sm font-medium text-slate-700">
+                Payment method
+              </Text>
+            ) : null}
+            {!payLater ? (
             <View className="flex-row rounded-xl bg-slate-100 p-1">
               <Pressable
                 onPress={() => setPayment("cash")}
@@ -863,8 +919,9 @@ export default function HomeScreen() {
                 </Text>
               </Pressable>
             </View>
+            ) : null}
 
-            {payment === "cash" ? (
+            {!payLater && payment === "cash" ? (
               <View className="mt-4 flex-row gap-3">
                 <View className="flex-1">
                   <Text className="mb-1 text-sm font-medium text-slate-700">
@@ -1001,11 +1058,25 @@ export default function HomeScreen() {
             {completedTxn ? (
               <>
                 <View className="mt-3 items-center">
-                  <View className="h-14 w-14 items-center justify-center rounded-full bg-emerald-100">
-                    <Ionicons name="checkmark" size={32} color="#059669" />
+                  <View
+                    className={`h-14 w-14 items-center justify-center rounded-full ${
+                      completedTxn.payLater ? "bg-amber-100" : "bg-emerald-100"
+                    }`}
+                  >
+                    <Ionicons
+                      name={completedTxn.payLater ? "time-outline" : "checkmark"}
+                      size={32}
+                      color={completedTxn.payLater ? "#b45309" : "#059669"}
+                    />
                   </View>
-                  <Text className="mt-2 text-sm font-semibold text-emerald-700">
-                    Payment received
+                  <Text
+                    className={`mt-2 text-sm font-semibold ${
+                      completedTxn.payLater ? "text-amber-700" : "text-emerald-700"
+                    }`}
+                  >
+                    {completedTxn.payLater
+                      ? "Charged to account"
+                      : "Payment received"}
                   </Text>
                   <Text className="text-[11px] text-slate-500">
                     {completedTxn.ref}
@@ -1097,18 +1168,30 @@ export default function HomeScreen() {
                   <View className="mt-1 flex-row justify-between">
                     <Text className="text-[11px] text-slate-500">Payment</Text>
                     <Text className="text-[11px] font-semibold text-slate-800">
-                      {completedTxn.payment === "cash"
-                        ? "Cash"
-                        : completedTxn.payment === "qr"
-                          ? "QR.PH"
-                          : completedTxn.payment === "gcash"
-                            ? "GCash"
-                            : completedTxn.payment === "credit"
-                              ? "Credit"
-                              : "Unpaid — pending"}
+                      {completedTxn.payLater
+                        ? "Pay Later (credit)"
+                        : completedTxn.payment === "cash"
+                          ? "Cash"
+                          : completedTxn.payment === "qr"
+                            ? "QR.PH"
+                            : completedTxn.payment === "gcash"
+                              ? "GCash"
+                              : completedTxn.payment === "credit"
+                                ? "Credit"
+                                : "Unpaid — pending"}
                     </Text>
                   </View>
-                  {completedTxn.payment === "cash" ? (
+                  {completedTxn.payLater ? (
+                    <View className="mt-0.5 flex-row justify-between">
+                      <Text className="text-[11px] text-slate-500">
+                        Balance due
+                      </Text>
+                      <Text className="text-[11px] font-semibold text-amber-700">
+                        {formatPeso(completedTxn.subtotal)}
+                      </Text>
+                    </View>
+                  ) : null}
+                  {!completedTxn.payLater && completedTxn.payment === "cash" ? (
                     <>
                       <View className="mt-0.5 flex-row justify-between">
                         <Text className="text-[11px] text-slate-500">
